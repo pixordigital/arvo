@@ -1,10 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-5xl">
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-    <h2 class="text-lg font-semibold capitalize">integrations</h2>
-    <p class="text-sm text-slate-400 mt-2">Vertical slice em construção — Fase 1 scaffold. Próximo: auth + multi-tenancy + RLS.</p>
-    <div class="mt-4 text-xs text-slate-500">Template: <code>app/web/templates/pages/integrations.html</code> — edita aqui, sem duplicar lógica domínio.</div>
+<div class="max-w-6xl space-y-4">
+  <h2 class="font-semibold">Integrations — RAW→VALIDATION→NORMALIZATION→CANONICAL</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+  {% for it in items %}
+    <div class="bg-slate-900 border {% if it.has_key %}border-emerald-900{% else %}border-slate-800{% endif %} rounded-xl p-4">
+      <div class="text-sm font-medium uppercase">{{ it.source }}</div>
+      <div class="text-xs mt-1 {% if it.status=='configured' %}text-emerald-400{% elif it.status=='ready' %}text-cyan-400{% else %}text-amber-400{% endif %}">{{ it.status }}</div>
+      {% if counts and counts[it.source.upper()] is defined %}
+      <div class="text-xs text-slate-500 mt-1">{{ counts[it.source.upper()] }} raw_records</div>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs text-slate-400">
+    <div>Sources com <code>raw_records</code> por org demo: {% if counts %}{% for k,v in counts.items() %}{{k}}:{{v}} {% endfor %}{% else %}nenhum ainda — faça POST /api/v1/ingest/csv{% endif %}</div>
+    <div class="mt-2">Keys: HUBSPOT/SALESFORCE/PIPEDRIVE/TWENTY/GMAIL/OUTLOOK via <code>ARVO_*</code> env. CSV/upload sempre ready.</div>
   </div>
 </div>
 {% endblock %}

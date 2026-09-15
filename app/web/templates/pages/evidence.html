@@ -1,10 +1,28 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-5xl">
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-    <h2 class="text-lg font-semibold capitalize">evidence</h2>
-    <p class="text-sm text-slate-400 mt-2">Vertical slice em construção — Fase 1 scaffold. Próximo: auth + multi-tenancy + RLS.</p>
-    <div class="mt-4 text-xs text-slate-500">Template: <code>app/web/templates/pages/evidence.html</code> — edita aqui, sem duplicar lógica domínio.</div>
+<div class="max-w-6xl space-y-6">
+  <h2 class="font-semibold">Evidence Pack — rastreabilidade por finding</h2>
+  {% if packs and packs|length>0 %}
+  <div class="space-y-3">
+    {% for p in packs %}
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div class="flex justify-between"><div class="font-medium text-sm">{{ p.title }}</div><div class="text-xs px-2 py-1 rounded bg-slate-800">{{ p.status }} • {{ p.kind }}</div></div>
+      <div class="mt-2 text-xs text-slate-400">provenance: <code class="bg-slate-800 px-1 rounded">{{ p.provenance }}</code></div>
+      <div class="mt-2 text-xs text-slate-300">pack: <code class="bg-slate-800 px-1 rounded break-all">{{ p.pack }}</code></div>
+      <a href="/findings" class="text-xs text-cyan-400 mt-2 inline-block">ver finding {{ p.id[:8] }}</a>
+    </div>
+    {% endfor %}
   </div>
+  {% else %}
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 text-sm text-slate-400">Nenhum evidence pack — faça ingest ou crie finding via <code>/api/v1</code>.</div>
+  {% endif %}
+  {% if evidences and evidences|length>0 %}
+  <h3 class="font-medium text-sm text-slate-300 mt-6">FindingEvidences ({{ evidences|length }})</h3>
+  <div class="space-y-2">
+    {% for e in evidences %}
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-3 text-xs"><span class="font-mono">{{ e.kind }}</span> — finding {{ e.finding_id[:8] }} — <code class="break-all">{{ e.content }}</code></div>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
