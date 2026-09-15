@@ -1,8 +1,8 @@
 """ARVO Web — Jinja2 routes. Spec §231-242. Shared base.html, auth-aware nav, CSRF on POST."""
 
 from pathlib import Path
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
@@ -44,6 +44,70 @@ async def _demo_org_id():
     async with get_sessionmaker()() as s:
         org = (await s.execute(select(Organization).where(Organization.slug=="arvo-demo"))).scalar_one_or_none()
         return org.id if org else None
+
+@router.get("/home", response_class=HTMLResponse)
+async def home(request: Request):
+    from app.core.config import PLANS
+    return templates.TemplateResponse(request, "pages/home.html", _ctx("Home", "home", {"plans": PLANS}))
+
+@router.get("/pricing", response_class=HTMLResponse)
+async def pricing(request: Request):
+    from app.core.config import PLANS
+    return templates.TemplateResponse(request, "pages/pricing.html", _ctx("Pricing", "pricing", {"plans": PLANS}))
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse(request, "pages/login.html", _ctx("Login", "login", {}))
+
+@router.post("/login", response_class=HTMLResponse)
+async def login_post(request: Request, email: str = Form(...), password: str = Form(...)):
+    from app.database.engine import get_sessionmaker
+    from sqlalchemy import select
+    from app.database.models import User, Membership
+    from app.core.security import verify_password, create_token
+    async with get_sessionmaker()() as s:
+        user = (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if not user or not verify_password(password, user.hashed_password):
+            return templates.TemplateResponse(request, "pages/login.html", _ctx("Login", "login", {"error": "Credenciais inválidas"}), status_code=401)
+        mem = (await s.execute(select(Membership).where(Membership.user_id == user.id))).scalars().first()
+        if not mem:
+            return templates.TemplateResponse(request, "pages/login.html", _ctx("Login", "login", {"error": "Sem organização"}), status_code=403)
+        tok = create_token(user.id, mem.org_id, mem.role)
+        resp = RedirectResponse(url="/", status_code=302)
+        resp.set_cookie("arvo_token", tok, httponly=True, samesite="lax", max_age=3600)
+        return resp
+
+@router.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return templates.TemplateResponse(request, "pages/register.html", _ctx("Register", "register", {}))
+
+@router.post("/register", response_class=HTMLResponse)
+async def register_post(request: Request, email: str = Form(...), password: str = Form(...), org_name: str = Form(...), org_slug: str = Form(...)):
+    from app.database.engine import get_sessionmaker
+    from sqlalchemy import select
+    from app.database.models import User, Organization, Membership
+    from app.core.security import hash_password, create_token
+    async with get_sessionmaker()() as s:
+        if (await s.execute(select(User).where(User.email == email))).scalar_one_or_none():
+            return templates.TemplateResponse(request, "pages/register.html", _ctx("Register", "register", {"error": "Email já existe"}), status_code=400)
+        if (await s.execute(select(Organization).where(Organization.slug == org_slug))).scalar_one_or_none():
+            return templates.TemplateResponse(request, "pages/register.html", _ctx("Register", "register", {"error": "Slug já existe"}), status_code=400)
+        org = Organization(name=org_name, slug=org_slug)
+        s.add(org); await s.flush()
+        user = User(email=email, hashed_password=hash_password(password))
+        s.add(user); await s.flush()
+        mem = Membership(org_id=org.id, user_id=user.id, role="OWNER")
+        s.add(mem); await s.commit()
+        tok = create_token(user.id, org.id, "OWNER")
+        resp = RedirectResponse(url="/", status_code=302)
+        resp.set_cookie("arvo_token", tok, httponly=True, samesite="lax", max_age=3600)
+        return resp
+
+@router.get("/logout")
+async def logout():
+    resp = RedirectResponse(url="/login", status_code=302)
+    resp.delete_cookie("arvo_token")
+    return resp
 
 @router.get("/", response_class=HTMLResponse)
 async def control_center(request: Request):

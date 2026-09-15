@@ -7,6 +7,7 @@ from app.database.engine import get_sessionmaker
 from app.database.models import Product, Proposal, ProposalItem, Invoice, FinancialEvent, FinancialLedger, Finding, FindingEvidence
 from app.services.financial import calc_proposal_total, idempotency_key, money
 from app.api.deps import get_current_user
+from app.core.limits import check_org_limits
 
 router = APIRouter(tags=["financial"])
 
@@ -69,7 +70,8 @@ async def list_findings(ctx=Depends(get_current_user)):
 
 @router.post("/findings")
 async def create_finding(data: dict, ctx=Depends(get_current_user)):
-    # Deterministic exposure must be provided; AI would have interpreted but Python stores
+    ok, err, _ = await check_org_limits(ctx["membership"].org_id, "findings")
+    if not ok: raise HTTPException(402, err)
     async with get_sessionmaker()() as s:
         f=Finding(org_id=ctx["membership"].org_id, kind=data.get("kind","LEAKAGE"), title=data.get("title","Finding"), description=data.get("description"), severity=data.get("severity","MEDIUM"), exposure_amount=str(data.get("exposure_amount","0")), currency=data.get("currency","BRL"), confidence=data.get("confidence","MEDIUM"), evidence_pack=data.get("evidence_pack",{}), idempotency_key=data.get("idempotency_key"))
         s.add(f); await s.flush()

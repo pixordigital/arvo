@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.database.engine import get_sessionmaker
 from app.database.models import Account, Contact
 from app.api.deps import get_current_user
+from app.core.limits import check_org_limits
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -29,6 +30,8 @@ async def list_accounts(ctx=Depends(get_current_user)):
 
 @router.post("")
 async def create_account(inp: AccountIn, ctx=Depends(get_current_user)):
+    ok, err, _ = await check_org_limits(ctx["membership"].org_id, "accounts")
+    if not ok: raise HTTPException(402, err)
     async with get_sessionmaker()() as s:
         a = Account(org_id=ctx["membership"].org_id, name=inp.name, domain=inp.domain, industry=inp.industry, type=inp.type, owner_id=ctx["user"].id)
         s.add(a); await s.commit(); await s.refresh(a)

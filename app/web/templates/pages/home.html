@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-6xl space-y-8">
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-8">
+    <div class="text-sm text-emerald-400 font-mono">AI Revenue Value Orchestrator</div>
+    <h1 class="text-3xl font-bold mt-2">Find the leak. Protect the value. Control the revenue.</h1>
+    <p class="text-slate-400 mt-3 max-w-2xl">ARVO audita deals com AI (interpreta) + Python (calcula) + Ledger (lembra) + Evidence Pack (explica). Humanos governam — APPROVE → EXECUTE → VERIFY.</p>
+    <div class="mt-6 flex gap-3">
+      <a href="/register" class="bg-white text-slate-900 px-5 py-2.5 rounded-lg text-sm font-medium">Criar org demo</a>
+      <a href="/pricing" class="bg-slate-800 hover:bg-slate-700 px-5 py-2.5 rounded-lg text-sm">Ver pricing — a partir de PLANS reais</a>
+      <a href="/api/docs" class="border border-slate-700 px-5 py-2.5 rounded-lg text-sm">API Docs</a>
+    </div>
+    <div class="mt-4 text-xs text-slate-500">Stack: FastAPI + Jinja2 + Tailwind — sem Node. Supabase Postgres+RLS+pgvector. OpenRouter default.</div>
+  </div>
+  <div class="grid grid-cols-3 gap-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5"><div class="text-sm font-semibold">1. Ingest</div><div class="text-xs text-slate-400 mt-1">CSV / Gmail / Hubspot / Salesforce / Pipedrive → RawRecord → canonical</div></div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5"><div class="text-sm font-semibold">2. Audit</div><div class="text-xs text-slate-400 mt-1">Deal Audit (202 + Idempotency-Key) → materiality Python → finding</div></div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5"><div class="text-sm font-semibold">3. Verify</div><div class="text-xs text-slate-400 mt-1">Action APPROVE→EXECUTED→VERIFIED → ledger VERIFIED → Financial Impact</div></div>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+    <div class="text-xs font-mono text-slate-500">PRINCÍPIO VERDADE — limites só de PLANS (app/core/config.py) + limits.py</div>
+    <div class="grid grid-cols-3 gap-3 mt-3">
+      {% for name, plan in plans.items() %}
+      <div class="bg-slate-800 rounded-lg p-3 text-xs"><div class="font-bold uppercase">{{ name }}</div><div class="text-slate-400 mt-1">{{ plan.max_orgs }} orgs • {{ plan.max_users }} users<br>{{ plan.max_accounts }} accounts • {{ plan.max_findings }} findings</div></div>
+      {% endfor %}
+    </div>
+    <div class="text-xs text-slate-500 mt-2">Veja <a href="/pricing" class="underline">/pricing</a> para detalhes reais. ~ para estimativas. * para projeções não garantidas.</div>
+  </div>
+  <div class="text-xs text-slate-500">Deploy: 178.105.181.38:9777 • Studio :9771 • Health: <code>/health/live</code> e <code>/health/ready</code></div>
+</div>
+{% endblock %}

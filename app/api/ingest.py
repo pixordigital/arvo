@@ -3,9 +3,11 @@
 from fastapi import APIRouter, Depends, UploadFile, File
 import csv, io, json
 from sqlalchemy import select
+from fastapi import HTTPException
 from app.database.engine import get_sessionmaker
 from app.database.models import RawRecord, Account
 from app.api.deps import get_current_user
+from app.core.limits import check_org_limits
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -15,6 +17,12 @@ async def ingest_csv(file: UploadFile = File(...), ctx=Depends(get_current_user)
     text = data.decode("utf-8", errors="ignore")
     reader = csv.DictReader(io.StringIO(text))
     rows = list(reader)
+    # limit check before bulk create — estimate
+    ok, err, usage = await check_org_limits(ctx["membership"].org_id, "accounts")
+    if not ok and len(rows) > 0: raise HTTPException(402, err)
+    # also check projected count vs limit
+    from app.core.config import PLANS
+    from app.core.limits import plan_for_org, plan_limits
     async with get_sessionmaker()() as s:
         raw = RawRecord(org_id=ctx["membership"].org_id, source="CSV", source_id=file.filename, payload={"rows": rows, "filename": file.filename}, status="PENDING")
         s.add(raw)
