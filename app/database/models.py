@@ -216,6 +216,32 @@ class FindingEvidence(Base, TimestampMixin):
     content: Mapped[dict] = mapped_column(SA_JSON, default=dict)
     finding = relationship("Finding", back_populates="evidences")
 
+# ── AI audit / extraction ──
+class AiExtraction(Base, TimestampMixin, OrgScopedMixin):
+    __tablename__ = "ai_extractions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    source_type: Mapped[str] = mapped_column(String(50))  # DEAL|CONTRACT|EMAIL
+    source_id: Mapped[str] = mapped_column(String(36), index=True)
+    model: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(String(50), default="v1")
+    tokens_in: Mapped[int] = mapped_column(default=0)
+    tokens_out: Mapped[int] = mapped_column(default=0)
+    cost_usd: Mapped[str] = mapped_column(String(20), default="0")
+    latency_ms: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(20), default="OK")
+    confidence: Mapped[str] = mapped_column(String(20), default="MEDIUM")
+    output: Mapped[dict] = mapped_column(SA_JSON, default=dict)
+    provenance: Mapped[dict] = mapped_column(SA_JSON, default=dict)
+
+class AiDecision(Base, TimestampMixin, OrgScopedMixin):
+    __tablename__ = "ai_decisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    kind: Mapped[str] = mapped_column(String(50))  # DEAL_AUDIT|MATERIALITY
+    input_ref: Mapped[str] = mapped_column(String(100))
+    output: Mapped[dict] = mapped_column(SA_JSON, default=dict)
+    model: Mapped[str] = mapped_column(String(100))
+    confidence: Mapped[str] = mapped_column(String(20), default="MEDIUM")
+
 ROLE_ORDER = {"OWNER":6, "ADMIN":5, "MANAGER":4, "ANALYST":3, "OPERATOR":2, "VIEWER":1}
 ALL_ROLES = list(ROLE_ORDER.keys())
 
