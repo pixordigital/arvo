@@ -242,6 +242,30 @@ class AiDecision(Base, TimestampMixin, OrgScopedMixin):
     model: Mapped[str] = mapped_column(String(100))
     confidence: Mapped[str] = mapped_column(String(20), default="MEDIUM")
 
+# ── Recommendations / Actions ── Fase 7
+class Recommendation(Base, TimestampMixin, OrgScopedMixin):
+    __tablename__ = "recommendations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    finding_id: Mapped[str] = mapped_column(ForeignKey("findings.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(500))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[str] = mapped_column(String(20), default="MEDIUM")
+    status: Mapped[str] = mapped_column(String(30), default="PENDING")  # PENDING|APPROVED|REJECTED
+    finding = relationship("Finding")
+
+class Action(Base, TimestampMixin, OrgScopedMixin):
+    __tablename__ = "actions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    finding_id: Mapped[str] = mapped_column(ForeignKey("findings.id", ondelete="CASCADE"), index=True)
+    recommendation_id: Mapped[str | None] = mapped_column(ForeignKey("recommendations.id", ondelete="SET NULL"), nullable=True)
+    title: Mapped[str] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(30), default="PROPOSED")  # PROPOSED→PENDING_APPROVAL→APPROVED→EXECUTING→EXECUTED→VERIFIED / REJECTED
+    approved_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    verified_amount: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    finding = relationship("Finding")
+    recommendation = relationship("Recommendation")
+
 ROLE_ORDER = {"OWNER":6, "ADMIN":5, "MANAGER":4, "ANALYST":3, "OPERATOR":2, "VIEWER":1}
 ALL_ROLES = list(ROLE_ORDER.keys())
 

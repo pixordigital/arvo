@@ -15,6 +15,7 @@ from app.api.ingest import router as ingest_router
 from app.api.financial import router as financial_router
 from app.api.deal_audit import router as audit_router
 from app.api.integrations import router as integ_router
+from app.api.actions import router as actions_router
 api_router.include_router(auth_router)
 api_router.include_router(accounts_router)
 api_router.include_router(opps_router)
@@ -22,6 +23,7 @@ api_router.include_router(ingest_router)
 api_router.include_router(financial_router, prefix="")
 api_router.include_router(audit_router)
 api_router.include_router(integ_router)
+api_router.include_router(actions_router, prefix="")
 
 # Placeholder routers — filled in later phases
 # from app.api import organizations, accounts, opportunities, findings, evidence, recommendations, actions, ledger, integrations, copilot, deal_audit
