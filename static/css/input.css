@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ARVO custom */
+.htmx-indicator{opacity:0;transition:opacity 200ms}
+.htmx-request .htmx-indicator{opacity:1}

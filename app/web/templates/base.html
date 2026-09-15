@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>{{ title }} — {{ app_name }}</title>
-  <!-- Tailwind CDN (optional per spec — no Node build required). Replace with standalone CLI for prod. -->
+  <!-- Tailwind CDN dev; prod use /static/css/app.css built via standalone CLI (no Node): ./tailwindcss -i static/css/input.css -o static/css/app.css -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- HTMX permitted for partial updates -->
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
