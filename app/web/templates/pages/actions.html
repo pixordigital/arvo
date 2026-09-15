@@ -1,10 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="max-w-5xl">
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-    <h2 class="text-lg font-semibold capitalize">actions</h2>
-    <p class="text-sm text-slate-400 mt-2">Vertical slice em construção — Fase 1 scaffold. Próximo: auth + multi-tenancy + RLS.</p>
-    <div class="mt-4 text-xs text-slate-500">Template: <code>app/web/templates/pages/actions.html</code> — edita aqui, sem duplicar lógica domínio.</div>
-  </div>
+  <h2 class="font-semibold mb-4">Actions — {{ actions|length }}</h2>
+  {% for a in actions %}<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-2 flex justify-between"><div><div class="font-medium">{{ a.title }}</div><div class="text-xs text-slate-400">{{ a.status }}</div></div><div class="text-sm {% if a.status=='VERIFIED' %}text-emerald-400{% endif %}">{{ a.verified_amount or "—" }}</div></div>{% endfor %}
 </div>
 {% endblock %}

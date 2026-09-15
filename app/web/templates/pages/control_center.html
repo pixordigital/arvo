@@ -1,10 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-5xl">
+<div class="max-w-6xl space-y-6">
+  <div class="grid grid-cols-4 gap-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Accounts</div><div class="text-2xl font-bold">{{ stats.accounts }}</div></div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Deals</div><div class="text-2xl font-bold">{{ stats.opps }}</div></div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Findings</div><div class="text-2xl font-bold text-amber-400">{{ stats.findings }}</div></div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Verified Impact</div><div class="text-2xl font-bold text-emerald-400">R$ {{ stats.verified }}</div><div class="text-xs text-slate-500">Exposure R$ {{ stats.exposure }}</div></div>
+  </div>
   <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-    <h2 class="text-lg font-semibold capitalize">control center</h2>
-    <p class="text-sm text-slate-400 mt-2">Vertical slice em construção — Fase 1 scaffold. Próximo: auth + multi-tenancy + RLS.</p>
-    <div class="mt-4 text-xs text-slate-500">Template: <code>app/web/templates/pages/control_center.html</code> — edita aqui, sem duplicar lógica domínio.</div>
+    <h2 class="font-semibold">Control Center — arvo-demo</h2>
+    <p class="text-sm text-slate-400 mt-1">Vertical slice vivo: ingest → finding → action → verified.</p>
+    <div class="mt-4 flex gap-2">
+      <a href="/findings" class="bg-white text-slate-900 px-4 py-2 rounded-lg text-sm font-medium">Ver Findings</a>
+      <a href="/financial-impact" class="bg-slate-800 px-4 py-2 rounded-lg text-sm">Financial Impact</a>
+    </div>
   </div>
 </div>
 {% endblock %}

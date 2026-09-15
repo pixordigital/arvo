@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="max-w-5xl">
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-    <h2 class="text-lg font-semibold capitalize">accounts</h2>
-    <p class="text-sm text-slate-400 mt-2">Vertical slice em construção — Fase 1 scaffold. Próximo: auth + multi-tenancy + RLS.</p>
-    <div class="mt-4 text-xs text-slate-500">Template: <code>app/web/templates/pages/accounts.html</code> — edita aqui, sem duplicar lógica domínio.</div>
+  <h2 class="font-semibold mb-4">Accounts — {{ accounts|length }}</h2>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+    <table class="w-full text-sm"><thead class="text-xs text-slate-400 border-b border-slate-800"><tr><th class="p-3 text-left">Name</th><th class="p-3">Domain</th><th class="p-3">Type</th></tr></thead>
+    <tbody>{% for a in accounts %}<tr class="border-b border-slate-800/50"><td class="p-3">{{ a.name }}</td><td class="p-3 text-slate-400">{{ a.domain or "—" }}</td><td class="p-3 text-xs">{{ a.type }}</td></tr>{% endfor %}</tbody></table>
   </div>
 </div>
 {% endblock %}

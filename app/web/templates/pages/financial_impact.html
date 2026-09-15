@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-5xl">
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-    <h2 class="text-lg font-semibold capitalize">financial impact</h2>
-    <p class="text-sm text-slate-400 mt-2">Vertical slice em construção — Fase 1 scaffold. Próximo: auth + multi-tenancy + RLS.</p>
-    <div class="mt-4 text-xs text-slate-500">Template: <code>app/web/templates/pages/financial_impact.html</code> — edita aqui, sem duplicar lógica domínio.</div>
+<div class="max-w-5xl space-y-4">
+  <div class="grid grid-cols-3 gap-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Findings Exposure</div><div class="text-xl font-bold">R$ {{ impact.exposure }}</div><div class="text-xs text-slate-500">{{ impact.count }} findings</div></div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Ledger Debit</div><div class="text-xl font-bold">R$ {{ impact.debit }}</div></div>
+    <div class="bg-emerald-950 border border-emerald-800 rounded-xl p-4"><div class="text-xs text-emerald-400">Verified</div><div class="text-xl font-bold text-emerald-400">R$ {{ impact.verified }}</div></div>
   </div>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs text-slate-500">Ledger = código calcula, não LLM. Double-count protegido por idempotency.</div>
 </div>
 {% endblock %}
