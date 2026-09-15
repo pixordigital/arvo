@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ title }} — {{ app_name }}</title>
+  <!-- Tailwind CDN (optional per spec — no Node build required). Replace with standalone CLI for prod. -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- HTMX permitted for partial updates -->
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex">
+  <!-- Sidebar -->
+  <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+    <div class="p-5 border-b border-slate-800">
+      <div class="text-lg font-bold tracking-tight">{{ app_name }}</div>
+      <div class="text-xs text-slate-400">Find the leak. Protect the value.</div>
+      <div class="text-[11px] text-slate-500 mt-1">Studio: <a href="{{ studio_url }}" target="_blank" class="underline hover:text-slate-300">{{ studio_url }}</a></div>
+    </div>
+    <nav class="flex-1 p-3 space-y-1" aria-label="Primary">
+      {% for label, href, key in nav %}
+      <a href="{{ href }}"
+         class="flex items-center px-3 py-2 rounded-lg text-sm {% if active==key %}bg-slate-800 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-white{% endif %}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </nav>
+    <div class="p-3 border-t border-slate-800 text-xs text-slate-500">
+      <div>AI interpreta. Python calcula.</div>
+      <div class="mt-1">Evidence explica. Ledger lembra.</div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 flex flex-col">
+    <header class="h-14 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between px-6">
+      <h1 class="text-base font-semibold">{{ title }}</h1>
+      <div class="flex items-center gap-3">
+        <a href="/api/docs" class="text-xs text-slate-400 hover:text-white">API Docs</a>
+        <a href="{{ studio_url }}" target="_blank" class="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg">Supabase Studio :9771 ↗</a>
+      </div>
+    </header>
+    <section class="flex-1 p-6 bg-slate-950">
+      {% block content %}{% endblock %}
+    </section>
+    <footer class="border-t border-slate-800 px-6 py-3 text-xs text-slate-500 flex justify-between">
+      <span>ARVO 0.1.0 — 178.105.181.38:9777</span>
+      <span>Humanos governam.</span>
+    </footer>
+  </main>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+/* ARVO — app.css (Tailwind via CDN already; add custom here) */
+/* htmtx indicator */
+.htmx-indicator{opacity:0;transition:opacity 200ms}
+.htmx-request .htmx-indicator{opacity:1}
