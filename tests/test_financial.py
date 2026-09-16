@@ -32,3 +32,17 @@ def test_capability():
     assert has_capability("OWNER","findings:approve")
     assert not has_capability("VIEWER","findings:approve")
     assert has_capability("OPERATOR","actions:execute")
+
+def test_sum_amounts_varchar_backend_agnostic():
+    # Postgres has no sum(varchar): totals must be computed in Python.
+    from app.services.financial import sum_amounts
+    assert sum_amounts(["12000.00", "7500.50", None, "", "garbage"]) == "19500.50"
+    assert sum_amounts([]) == "0.00"
+    assert sum_amounts(None) == "0.00"
+
+def test_brl_filter_formats_never_raises():
+    from app.web.routes import _brl
+    assert _brl("19500.00") == "R$ 19.500,00"
+    assert _brl("12000.00") == "R$ 12.000,00"
+    assert _brl(None) == "—"
+    assert _brl("garbage") == "—"

@@ -97,14 +97,15 @@ async def home(request: Request):
     org_id = await _demo_org_id()
     stats = {"accounts": 0, "opps": 0, "findings": 0, "exposure": "0.00", "verified": "0.00"}
     if org_id:
+        from app.services.financial import sum_amounts
         async with get_sessionmaker()() as s:
             stats["accounts"] = (await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))).scalar()
             stats["opps"] = (await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))).scalar()
             stats["findings"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar()
-            ex = (await s.execute(select(func.coalesce(func.sum(Finding.exposure_amount), 0)).where(Finding.org_id == org_id))).scalar()
-            stats["exposure"] = f"{float(ex or 0):.2f}"
-            ver = (await s.execute(select(func.coalesce(func.sum(FinancialLedger.amount), 0)).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalar()
-            stats["verified"] = f"{float(ver or 0):.2f}"
+            exp_vals = (await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))).scalars().all()
+            stats["exposure"] = sum_amounts(exp_vals)
+            ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalars().all()
+            stats["verified"] = sum_amounts(ver_vals)
     return templates.TemplateResponse(request, "pages/home.html", _ctx("Home", "home", {"plans": PLANS, "stats": stats}, request))
 
 
@@ -181,15 +182,16 @@ async def control_center(request: Request):
     org_id = await _demo_org_id()
     stats = {"accounts": 0, "opps": 0, "findings": 0, "critical": 0, "exposure": "0.00", "verified": "0.00"}
     if org_id:
+        from app.services.financial import sum_amounts
         async with get_sessionmaker()() as s:
             stats["accounts"] = (await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))).scalar()
             stats["opps"] = (await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))).scalar()
             stats["findings"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar()
             stats["critical"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id, Finding.severity == "critical"))).scalar() or 0
-            ex = (await s.execute(select(func.coalesce(func.sum(Finding.exposure_amount), 0)).where(Finding.org_id == org_id))).scalar()
-            stats["exposure"] = f"{float(ex or 0):.2f}"
-            ver = (await s.execute(select(func.coalesce(func.sum(FinancialLedger.amount), 0)).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalar()
-            stats["verified"] = f"{float(ver or 0):.2f}"
+            exp_vals = (await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))).scalars().all()
+            stats["exposure"] = sum_amounts(exp_vals)
+            ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalars().all()
+            stats["verified"] = sum_amounts(ver_vals)
     ex_f = float(stats["exposure"]); ver_f = float(stats["verified"])
     stats["leak_pct_verified"] = int(round(ver_f / ex_f * 100)) if ex_f > 0 else 0
     stats["leak_pct_open"] = 100 - stats["leak_pct_verified"] if ex_f > 0 else 0
@@ -252,11 +254,15 @@ async def financial_impact(request: Request):
     org_id = await _demo_org_id()
     data = {"exposure": "0.00", "verified": "0.00", "count": 0}
     if org_id:
+        from app.services.financial import sum_amounts
         async with get_sessionmaker()() as s:
             data["count"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar()
-            data["exposure"] = f"{float((await s.execute(select(func.coalesce(func.sum(Finding.exposure_amount), 0)).where(Finding.org_id == org_id))).scalar() or 0):.2f}"
-            data["verified"] = f"{float((await s.execute(select(func.coalesce(func.sum(FinancialLedger.amount), 0)).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == 'VERIFIED'))).scalar() or 0):.2f}"
-            data["debit"] = f"{float((await s.execute(select(func.coalesce(func.sum(FinancialLedger.amount), 0)).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == 'DEBIT'))).scalar() or 0):.2f}"
+            exp_vals = (await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))).scalars().all()
+            data["exposure"] = sum_amounts(exp_vals)
+            ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalars().all()
+            data["verified"] = sum_amounts(ver_vals)
+            deb_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "DEBIT"))).scalars().all()
+            data["debit"] = sum_amounts(deb_vals)
     return templates.TemplateResponse(request, "pages/financial_impact.html", _ctx("Financial Impact", "financial-impact", {"impact": data}, request))
 
 

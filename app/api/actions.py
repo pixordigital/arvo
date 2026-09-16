@@ -90,11 +90,12 @@ async def list_actions(ctx=Depends(get_current_user)):
 
 @router.get("/financial-impact")
 async def financial_impact(ctx=Depends(get_current_user)):
+    from app.services.financial import sum_amounts
     async with get_sessionmaker()() as s:
-        q=await s.execute(select(func.coalesce(func.sum(FinancialLedger.amount),0)).where(FinancialLedger.org_id==ctx["membership"].org_id, FinancialLedger.entry_type=="DEBIT"))
-        exposure=str(q.scalar() or "0")
-        q2=await s.execute(select(func.coalesce(func.sum(FinancialLedger.amount),0)).where(FinancialLedger.org_id==ctx["membership"].org_id, FinancialLedger.entry_type=="VERIFIED"))
-        verified=str(q2.scalar() or "0")
+        deb_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id==ctx["membership"].org_id, FinancialLedger.entry_type=="DEBIT"))).scalars().all()
+        exposure = sum_amounts(deb_vals)
+        ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id==ctx["membership"].org_id, FinancialLedger.entry_type=="VERIFIED"))).scalars().all()
+        verified = sum_amounts(ver_vals)
         findings=(await s.execute(select(Finding).where(Finding.org_id==ctx["membership"].org_id))).scalars().all()
         total_exp=sum(float(f.exposure_amount or 0) for f in findings)
         return {"exposure_ledger": exposure, "verified": verified, "findings_exposure": f"{total_exp:.2f}", "findings_count": len(findings), "ledger_count": (await s.execute(select(func.count(FinancialLedger.id)).where(FinancialLedger.org_id==ctx["membership"].org_id))).scalar()}

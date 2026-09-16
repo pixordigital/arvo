@@ -40,6 +40,18 @@ def calc_ledger_balance(entries: list[dict]) -> str:
         else: bal -= amt
     return money(bal)
 
+def sum_amounts(values) -> str:
+    """Sum VARCHAR money columns in Python, not SQL.
+
+    Postgres has no sum(varchar) — func.sum(amount) 500s on Supabase
+    while silently working on SQLite. Fetch raw strings, total with
+    Decimal here. Backend-agnostic by design.
+    """
+    total = Decimal("0")
+    for v in values or []:
+        total += D(v)
+    return money(total)
+
 # Double-counting prevention: idempotency_key = f"{org_id}:{kind}:{source_id}"
 def idempotency_key(org_id: str, kind: str, source_id: str) -> str:
     return f"{org_id}:{kind}:{source_id}"
