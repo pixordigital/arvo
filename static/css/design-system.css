@@ -389,31 +389,47 @@ html.light .sidebar-nav a[aria-current="page"] { color: #007a5c !important; back
   .main { margin-left: 0 !important; }
 }
 @media (min-width: 768px) {
-  .sidebar { display: flex !important; flex-direction: column; }
+  .sidebar {
+    display: flex !important; flex-direction: column;
+    position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-w); z-index: 40;
+  }
   .sidebar.collapsed { width: var(--sidebar-w-collapsed); }
-  .sidebar.collapsed .nav-text, .sidebar.collapsed .sidebar-label { display: none; }
+  .sidebar.collapsed .nav-text, .sidebar.collapsed .sidebar-label, .sidebar.collapsed .logo-text { display: none; }
   .sidebar.collapsed .sidebar-nav a { justify-content: center; padding: 0.6rem; }
+  .sidebar.collapsed .logo-wrap { justify-content: center; }
+  .sidebar.collapsed .sidebar-head { justify-content: center; padding: 1rem 0.5rem; }
+  .sidebar.collapsed .sidebar-toggle { display: none; }
+  .sidebar.collapsed .foot-slogan, .sidebar.collapsed .sidebar-foot .w-10 { display: none; }
+  .sidebar.collapsed .foot-row { justify-content: center; }
   .main { margin-left: var(--sidebar-w); transition: margin-left 0.2s ease; }
   .main.sidebar-collapsed { margin-left: var(--sidebar-w-collapsed); }
 }
 
-/* ——— Bottom nav ——— */
+/* ——— Bottom nav: floating pill ——— */
 .bottom-nav {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-  background: rgba(10, 10, 10, 0.88); backdrop-filter: blur(12px);
-  border-top: 1px solid hsl(var(--border));
-  display: flex; align-items: stretch;
-  padding-bottom: var(--safe-bottom);
+  position: fixed; left: 0.75rem; right: 0.75rem; bottom: calc(0.75rem + var(--safe-bottom)); z-index: 100;
+  background: rgba(18, 18, 18, 0.85);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 1.25rem;
+  display: flex; align-items: stretch; gap: 2px; padding: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
-html.light .bottom-nav { background: rgba(255,255,255,0.92); }
+html.light .bottom-nav { background: rgba(255, 255, 255, 0.9); border-color: rgba(0, 0, 0, 0.08); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14); }
 @media (min-width: 768px) { .bottom-nav { display: none; } }
 .bottom-nav .nav-item {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 2px; padding: 0.5rem 0; text-decoration: none;
-  font-size: 0.6rem; font-weight: 600; color: #525252; transition: color 0.15s;
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; padding: 0.55rem 0 0.5rem; text-decoration: none; border-radius: 0.9rem;
+  font-size: 0.6rem; font-weight: 600; color: hsl(var(--muted-foreground));
+  transition: background 0.15s var(--ease-out), color 0.15s, transform 0.1s;
 }
-.bottom-nav .nav-item[aria-current="page"] { color: var(--mint); }
-html.light .bottom-nav .nav-item[aria-current="page"] { color: #007a5c; }
+.bottom-nav .nav-item svg { opacity: 0.65; transition: opacity 0.15s, transform 0.2s var(--ease-spring); }
+.bottom-nav .nav-item:active { transform: scale(0.94); }
+.bottom-nav .nav-item:active svg { transform: scale(1.15); }
+.bottom-nav .nav-item[aria-current="page"] { color: var(--mint); background: var(--mint-dim); }
+.bottom-nav .nav-item[aria-current="page"] svg { opacity: 1; }
+html.light .bottom-nav .nav-item[aria-current="page"] { color: #007a5c; background: rgba(0, 122, 92, 0.1); }
 
 /* theme icons */
 .theme-toggle .icon-sun { display: none; }
@@ -655,10 +671,6 @@ html.light .table-zebra tbody tr:nth-child(even) { background: rgba(0, 0, 0, 0.0
 }
 html.light .nav-section { color: #a3a3a3; }
 .bottom-nav .nav-item { position: relative; }
-.bottom-nav .nav-item[aria-current="page"]::after {
-  content: ''; position: absolute; top: 0; width: 1.5rem; height: 2px;
-  border-radius: 2px; background: var(--mint); box-shadow: 0 0 8px rgba(0,229,160,0.7);
-}
 .main > header { border-bottom: 1px solid hsl(var(--border)); box-shadow: 0 1px 12px rgba(0,0,0,0.35); }
 
 /* ——— 8. Feedback: skeleton, spinner, toast, tooltip ——— */
@@ -950,11 +962,7 @@ html.light .action-row:hover { background: #fafafa; }
 .swatch.mint { background: var(--mint); }
 .swatch.amber { background: var(--amber); }
 
-/* ——— Bottom nav pro: labels readable, active pill ——— */
-.bottom-nav { padding-bottom: var(--safe-bottom); border-top: 1px solid hsl(var(--border)); }
-.bottom-nav .nav-item { padding: 0.55rem 0 0.6rem; gap: 3px; }
-.bottom-nav .nav-item svg { opacity: 0.75; }
-.bottom-nav .nav-item[aria-current="page"] svg { opacity: 1; }
+/* ——— Bottom nav pro: label refinement (geometry lives in base layer) ——— */
 .bottom-nav .nav-item .nav-label { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.01em; }
 
 /* ——— Page head tighter on phone ——— */
