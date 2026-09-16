@@ -2,7 +2,7 @@
   // Theme toggle
   const THEME_KEY = 'arvo-theme';
   const html = document.documentElement;
-  const toggles = document.querySelectorAll('#theme-toggle-mobile, #theme-toggle-desktop');
+  const toggles = document.querySelectorAll('#theme-toggle-topbar, #theme-toggle-desktop');
 
   function applyTheme(theme) {
     html.dataset.theme = theme;
@@ -79,24 +79,15 @@
     if (window.innerWidth < 768) closeSidebar();
   });
 
-  // Bottom nav + sidebar active state sync (HTMX handles navigation)
+  // Bottom nav + sidebar active state sync (CSS owns colors via [aria-current])
   function syncActiveState() {
     const path = window.location.pathname;
-    document.querySelectorAll('.nav-item, .sidebar-nav a').forEach(el => {
+    document.querySelectorAll('.nav-item, .sidebar-nav a, .pill').forEach(el => {
       const href = el.getAttribute('href');
+      if (!href) return;
       const isActive = href === path;
-      el.classList.toggle('active', isActive);
-      el.setAttribute('aria-current', isActive ? 'page' : 'false');
-      // Update color for bottom nav
-      if (el.classList.contains('nav-item')) {
-        if (isActive) {
-          el.classList.remove('text-[hsl(var(--muted-foreground))]');
-          el.classList.add('text-[hsl(var(--primary))]');
-        } else {
-          el.classList.remove('text-[hsl(var(--primary))]');
-          el.classList.add('text-[hsl(var(--muted-foreground))]');
-        }
-      }
+      if (isActive) el.setAttribute('aria-current', 'page');
+      else el.removeAttribute('aria-current');
     });
   }
 
@@ -105,6 +96,30 @@
   // Initial sync
   syncActiveState();
 
+  // Toast helper — elements with [data-toast] show transient feedback
+  let toastTimer;
+  function toast(msg, kind) {
+    const el = document.getElementById('arvo-toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'toast show' + (kind ? ' toast-' + kind : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-toast]');
+    if (t) toast(t.getAttribute('data-toast'), 'success');
+  });
+
+  // Copy helper used by settings page
+  window.copyEnv = async function(key) {
+    try {
+      await navigator.clipboard.writeText(key);
+      toast('Copiado: ' + key, 'success');
+    } catch {
+      toast('Não foi possível copiar', 'error');
+    }
+  };
   // Table scroll hint visibility
   function updateTableHints() {
     document.querySelectorAll('.table-wrap').forEach(wrap => {

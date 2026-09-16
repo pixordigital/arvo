@@ -1,32 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-md mx-auto py-8 md:py-16">
-  <div class="card p-6 md:p-8">
-    <h2 class="text-2xl font-bold mb-2" style="color:hsl(var(--foreground))">Criar organização</h2>
-    <p class="text-sm text-[hsl(var(--muted-foreground))] mb-6">OWNER criado + org vinculada. Plano inicial: <code>starter</code>.</p>
-    {% if error %}
-    <div class="mb-4 p-3 rounded-md bg-[hsl(var(--destructive)/0.1)] border border-[hsl(var(--destructive))] text-sm" style="color:hsl(var(--destructive))">{{ error }}</div>
-    {% endif %}
-    <form class="space-y-4" method="post">
-      <div>
-        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Email</label>
-        <input type="email" name="email" required class="input" placeholder="email@arvo.test" autocomplete="email" />
-      </div>
-      <div>
-        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Password</label>
-        <input type="password" name="password" required class="input" placeholder="password (≥6)" autocomplete="new-password" />
-      </div>
-      <div>
-        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Nome da organização</label>
-        <input type="text" name="org_name" required class="input" placeholder="ARVO" autocomplete="organization" />
-      </div>
-      <div>
-        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Slug</label>
-        <input type="text" name="org_slug" required class="input" placeholder="arvo" autocomplete="off" />
-      </div>
-      <button type="submit" class="btn btn-primary w-full touch-target mt-2" style="background-color:hsl(142 76% 36%);">Criar e entrar</button>
+<div class="auth-wrap">
+  <div class="text-center mb-6"><div class="logo-mark mx-auto mb-3">A</div><h1 class="text-2xl font-bold tracking-tight t-fg">Criar organização</h1><p class="page-sub mt-2">OWNER criado + org vinculada. Plano inicial: <code>starter</code>.</p></div>
+  <div class="card card-content elev-2">
+    {% if error %}<div class="alert-error" role="alert">{{ error }}</div>{% endif %}
+    <form class="form-stack" method="post">
+      <div class="field"><label for="reg-email">Email</label><input id="reg-email" type="email" name="email" required class="input" placeholder="email@arvo.test" autocomplete="email" /></div>
+      <div class="field"><label for="reg-pass">Password</label><input id="reg-pass" type="password" name="password" required class="input" placeholder="Mínimo 6 caracteres" autocomplete="new-password" /><span class="help">Mínimo 6 caracteres.</span></div>
+      <div class="field"><label for="reg-org">Nome da organização</label><input id="reg-org" type="text" name="org_name" required class="input" placeholder="ARVO" autocomplete="organization" /></div>
+      <div class="field"><label for="reg-slug">Slug</label><input id="reg-slug" type="text" name="org_slug" required class="input" placeholder="arvo" autocomplete="off" pattern="[a-z0-9-]+" /><span class="help">Minúsculas, números e hífen.</span></div>
+      <button type="submit" class="btn btn-primary w-full pressable">Criar e entrar</button>
     </form>
-    <p class="mt-6 text-center text-xs text-[hsl(var(--muted-foreground))]">Já tem conta? <a href="/login" class="underline hover:text-[hsl(var(--primary))]">Login</a></p>
+    <p class="auth-foot">Já tem conta? <a href="/login" class="link">Login</a></p>
   </div>
 </div>
 {% endblock %}

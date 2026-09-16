@@ -1,3 +1,5 @@
+node_modules/
+.npm/
 __pycache__/
 *.pyc
 .venv/
@@ -6,4 +8,5 @@ arvo.db
 *.db
 /data
 .DS_Store
-node_modules/
+.git/
+.pytest_cache/

@@ -1,58 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto">
-  <section class="py-8 md:py-12">
-    <div class="max-w-2xl mx-auto text-center">
-      <h1 class="text-3xl md:text-4xl font-bold tracking-tight mb-4" style="color:hsl(var(--foreground))">Pricing — limites reais do código</h1>
-      <p class="text-base text-[hsl(var(--muted-foreground))] mb-6">Princípio inegociável 2026-09-13: nunca prometer na home/pricing o que o código não entrega. Números abaixo = PLANS verdadeiros. Voz/estimativas com ~ e *.</p>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="grid-responsive">
-      {% for name, plan in plans.items() %}
-      <div class="card p-6 md:p-8 transition-colors hover:border-[hsl(var(--ring))]">
-        <div class="text-xs font-medium uppercase tracking-wider mb-2 {% if name=='pro' %}text-[hsl(var(--primary))]{% else %}text-[hsl(var(--muted-foreground))]{% endif %}">
-          {% if name=='pro' %}— recomendado{% endif %} {{ name }}
-        </div>
-        <div class="grid grid-cols-2 gap-2 mb-4">
-          <div>
-            <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Org(s)</div>
-            <div class="text-lg font-bold">{{ plan.max_orgs }}</div>
-          </div>
-          <div>
-            <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Users</div>
-            <div class="text-lg font-bold">{{ plan.max_users }}</div>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2 mb-4">
-          <div>
-            <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Accounts</div>
-            <div class="text-lg font-bold">{{ plan.max_accounts }}</div>
-          </div>
-          <div>
-            <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Findings</div>
-            <div class="text-lg font-bold">{{ plan.max_findings }}</div>
-          </div>
-        </div>
-        <a href="/register" class="btn btn-primary w-full touch-target">
-          Começar — {{ name }}
-        </a>
-      </div>
-      {% endfor %}
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="card p-4 md:p-6 bg-[hsl(var(--secondary))]">
-      <p class="text-base text-[hsl(var(--secondary-foreground))] mb-4">Notas:</p>
-      <ul class="list-disc list-inside space-y-2 text-sm text-[hsl(var(--muted-foreground))]">
-        <li>Todos os planos incluem: ledger idempotente, evidence pack, RLS org-isolation, deal audit, LGPD export/delete.</li>
-        <li>*Estimativa: ~R$ exposto recuperável depende de deal mix; não garantido. Use Financial Impact para real.</li>
-        <li>Limites não exibidos na home/pricing são fictícios. Se não está em PLANS, não existe.</li>
-        <li>Upgrade: trocar <code>org.extra_data.plan</code> → starter|pro|enterprise; limites aplicados imediatamente.</li>
-      </ul>
-    </div>
-  </section>
+<div class="page-head center">
+  <span class="eyebrow">Pricing</span>
+  <h1>Limites reais do código</h1>
+  <p class="page-sub">Princípio inegociável 2026-09-13: nunca prometer o que o código não entrega. Números abaixo = PLANS verdadeiros. Voz/estimativas com ~ e *.</p>
 </div>
+
+<section aria-label="Planos">
+  <div class="grid-responsive stagger">
+    {% for name, plan in plans.items() %}
+    <div class="card card-content card-hover hover-lift plan-card {% if name=='pro' %}card-featured{% endif %}">
+      <div class="stat-cap {% if name=='pro' %}t-mint{% endif %}">{% if name=='pro' %}— recomendado · {% endif %}{{ name }}</div>
+      <div class="plan-metrics">
+        <div class="plan-metric"><div class="stat-cap">Orgs</div><div class="v num">{{ plan.max_orgs }}</div></div>
+        <div class="plan-metric"><div class="stat-cap">Users</div><div class="v num">{{ plan.max_users }}</div></div>
+        <div class="plan-metric"><div class="stat-cap">Accounts</div><div class="v num">{{ plan.max_accounts }}</div></div>
+        <div class="plan-metric"><div class="stat-cap">Findings</div><div class="v num">{{ plan.max_findings }}</div></div>
+      </div>
+      <a href="/register" class="btn {% if name=='pro' %}btn-primary{% else %}btn-secondary{% endif %} w-full pressable mt-auto">Começar — {{ name }}</a>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="mt-6">
+  <div class="card card-content">
+    <h2 class="card-title mb-4">Notas</h2>
+    <ul class="list-disc list-inside space-y-2 text-sm t-muted">
+      <li>Todos os planos incluem: ledger idempotente, evidence pack, RLS org-isolation, deal audit, LGPD export/delete.</li>
+      <li>*Estimativa: ~R$ exposto recuperável depende de deal mix; não garantido. Use Financial Impact para real.</li>
+      <li>Limites não exibidos aqui são fictícios. Se não está em PLANS, não existe.</li>
+      <li>Upgrade: trocar <code>org.extra_data.plan</code> → starter|pro|enterprise; limites aplicados imediatamente.</li>
+    </ul>
+  </div>
+</section>
 {% endblock %}

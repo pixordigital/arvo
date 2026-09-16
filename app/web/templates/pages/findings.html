@@ -1,50 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto">
-  <section class="py-6 md:py-8">
-    <div class="max-w-2xl mx-auto">
-      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Findings</h2>
-      <p class="text-sm text-[hsl(var(--muted-foreground))]">Riscos e exposições detectados. Severity e status abaixo.</p>
-    </div>
-  </section>
-  <section class="py-6 md:py-8">
-    <div class="table-wrap">
-      <table class="table table-mobile-card">
-        <thead>
-          <tr>
-            <th data-label="ID">ID</th>
-            <th data-label="Título">Título</th>
-            <th data-label="Tipo">Tipo</th>
-            <th data-label="Severidade">Severidade</th>
-            <th data-label="Status">Status</th>
-            <th data-label="Exposição">Exposição</th>
-            <th data-label="Moeda">Moeda</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in findings %}
-          <tr>
-            <td data-label="ID" class="font-medium">{{ f.id[:8] }}</td>
-            <td data-label="Título">{{ f.title }}</td>
-            <td data-label="Tipo"><span class="badge badge-default">{{ f.kind }}</span></td>
-            <td data-label="Severidade">
-              <span class="badge {% if f.severity=='critical' %}badge-destructive{% elif f.severity=='high' %}badge-warning{% elif f.severity=='medium' %}badge-info{% else %}badge-default{% endif %}">{{ f.severity }}</span>
-            </td>
-            <td data-label="Status"><span class="badge badge-default">{{ f.status }}</span></td>
-            <td data-label="Exposição" class="font-mono">R$ {{ f.exposure }}</td>
-            <td data-label="Moeda">{{ f.currency }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% if not findings %}
-    <div class="card p-8 text-center">
-      <svg class="mx-auto h-12 w-12 text-[hsl(var(--muted-foreground))]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-      <h3 class="mt-2 text-lg font-medium" style="color:hsl(var(--foreground))">Nenhum finding</h3>
-      <p class="mt-1 text-sm text-[hsl(var(--muted-foreground))]">Nenhum risco detectado ainda.</p>
-    </div>
-    {% endif %}
-  </section>
+<div class="page-head">
+  <span class="eyebrow">Risk ledger</span>
+  <h1>Findings</h1>
+  <p class="page-sub">Riscos e exposições detectados, com severidade e status auditáveis.</p>
 </div>
+<section>
+  <div class="table-wrap elev-1">
+    <table class="table table-mobile-card table-sticky table-zebra">
+      <caption>{{ findings|length }} finding(s) · ordenado por detecção</caption>
+      <thead><tr><th>ID</th><th>Título</th><th>Tipo</th><th>Severidade</th><th>Status</th><th class="num">Exposição</th><th>Moeda</th></tr></thead>
+      <tbody>
+        {% for f in findings %}
+        <tr>
+          <td data-label="ID" class="font-mono t-muted">{{ f.id[:8] }}</td>
+          <td data-label="Título" class="t-fg font-medium">{{ f.title }}</td>
+          <td data-label="Tipo"><span class="badge badge-default">{{ f.kind }}</span></td>
+          <td data-label="Severidade"><span class="badge {% if f.severity=='critical' %}badge-destructive{% elif f.severity=='high' %}badge-warning{% elif f.severity=='medium' %}badge-info{% else %}badge-default{% endif %}"><span class="dot"></span>{{ f.severity }}</span></td>
+          <td data-label="Status"><span class="badge badge-outline">{{ f.status }}</span></td>
+          <td data-label="Exposição" class="num t-fg">R$ {{ f.exposure }}</td>
+          <td data-label="Moeda" class="t-muted">{{ f.currency }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not findings %}
+  <div class="card empty-card mt-4">
+    <div class="empty-icon-ring"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div>
+    <h3 class="empty-title">Nenhum finding</h3>
+    <p class="empty-sub">Nenhum risco detectado ainda. Conecte uma integração para começar.</p>
+    <a href="/integrations" class="btn btn-secondary pressable">Conectar fonte</a>
+  </div>
+  {% endif %}
+</section>
 {% endblock %}

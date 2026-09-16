@@ -10,6 +10,30 @@ router = APIRouter()
 _templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
 
+
+def _brl(value) -> str:
+    """Format 19500.00 -> R$ 19.500,00 (pt-BR). Never invents, only formats."""
+    if value is None or value == "":
+        return "—"
+    try:
+        n = float(value)
+    except Exception:
+        return "—"
+    s = f"{n:,.2f}"  # 19,500.00
+    return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+_PT_MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+
+
+def _today_pt() -> str:
+    from datetime import date
+    d = date.today()
+    return f"{d.day:02d} {_PT_MONTHS[d.month - 1]} {d.year}"
+
+
+templates.env.filters["brl"] = _brl
+
 # Navigation spec §242 — sidebar items with icons
 NAV = [
     ("Home", "/home", "home", '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
@@ -45,6 +69,7 @@ def _ctx(title: str, active: str, extra: dict | None = None, request: Request | 
         "nav": NAV,
         "bottom_nav": BOTTOM_NAV,
         "theme": theme,
+        "today": _today_pt(),
         "app_name": settings.app_name,
         "studio_url": settings.supabase_studio_url,
         "app_url": settings.app_url,
@@ -154,16 +179,20 @@ async def control_center(request: Request):
     from app.database.engine import get_sessionmaker
     from app.database.models import Account, Opportunity, Finding, FinancialLedger
     org_id = await _demo_org_id()
-    stats = {"accounts": 0, "opps": 0, "findings": 0, "exposure": "0.00", "verified": "0.00"}
+    stats = {"accounts": 0, "opps": 0, "findings": 0, "critical": 0, "exposure": "0.00", "verified": "0.00"}
     if org_id:
         async with get_sessionmaker()() as s:
             stats["accounts"] = (await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))).scalar()
             stats["opps"] = (await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))).scalar()
             stats["findings"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar()
+            stats["critical"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id, Finding.severity == "critical"))).scalar() or 0
             ex = (await s.execute(select(func.coalesce(func.sum(Finding.exposure_amount), 0)).where(Finding.org_id == org_id))).scalar()
             stats["exposure"] = f"{float(ex or 0):.2f}"
             ver = (await s.execute(select(func.coalesce(func.sum(FinancialLedger.amount), 0)).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalar()
             stats["verified"] = f"{float(ver or 0):.2f}"
+    ex_f = float(stats["exposure"]); ver_f = float(stats["verified"])
+    stats["leak_pct_verified"] = int(round(ver_f / ex_f * 100)) if ex_f > 0 else 0
+    stats["leak_pct_open"] = 100 - stats["leak_pct_verified"] if ex_f > 0 else 0
     return templates.TemplateResponse(request, "pages/control_center.html", _ctx("Control Center", "control-center", {"stats": stats}, request))
 
 
@@ -201,12 +230,18 @@ async def accounts(request: Request):
     from app.database.engine import get_sessionmaker
     from app.database.models import Account
     org_id = await _demo_org_id()
+    type_filter = request.query_params.get("type")
+    if type_filter not in ("PROSPECT", "CUSTOMER"):
+        type_filter = None
     rows = []
     if org_id:
         async with get_sessionmaker()() as s:
-            rows = (await s.execute(select(Account).where(Account.org_id == org_id).order_by(Account.created_at.desc()))).scalars().all()
+            q = select(Account).where(Account.org_id == org_id)
+            if type_filter:
+                q = q.where(Account.type == type_filter)
+            rows = (await s.execute(q.order_by(Account.created_at.desc()))).scalars().all()
             rows = [{"id": r.id, "name": r.name, "domain": r.domain, "type": r.type} for r in rows]
-    return templates.TemplateResponse(request, "pages/accounts.html", _ctx("Accounts", "accounts", {"accounts": rows}, request))
+    return templates.TemplateResponse(request, "pages/accounts.html", _ctx("Accounts", "accounts", {"accounts": rows, "type_filter": type_filter}, request))
 
 
 @router.get("/financial-impact", response_class=HTMLResponse)

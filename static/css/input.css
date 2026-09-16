@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ARVO custom */
-.htmx-indicator{opacity:0;transition:opacity 200ms}
-.htmx-request .htmx-indicator{opacity:1}
+/* ARVO — compiled utilities layer only.
+   Tokens + components live in design-system.css (loaded after this file).
+   Keep this file free of custom CSS so `npm run css` stays reproducible. */
+.htmx-indicator { opacity: 0; transition: opacity 200ms; }
+.htmx-request .htmx-indicator { opacity: 1; }

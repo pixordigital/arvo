@@ -1,53 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto">
-  <section class="py-6 md:py-8">
-    <div class="max-w-2xl mx-auto">
-      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Actions</h2>
-      <p class="text-sm text-[hsl(var(--muted-foreground))]">Ciclo de vida: PROPOSED → APPROVED → EXECUTING → EXECUTED → VERIFIED / REJECTED</p>
-    </div>
-  </section>
-  <section class="py-6 md:py-8">
-    <div class="table-wrap">
-      <table class="table table-mobile-card">
-        <thead>
-          <tr>
-            <th data-label="ID">ID</th>
-            <th data-label="Título">Título</th>
-            <th data-label="Status">Status</th>
-            <th data-label="Verificado">Verificado</th>
-            <th data-label="Finding">Finding</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for a in actions %}
-          <tr>
-            <td data-label="ID" class="font-medium">{{ a.id[:8] }}</td>
-            <td data-label="Título">{{ a.title[:50] }}</td>
-            <td data-label="Status">
-              <span class="badge 
-                {% if a.status=='PROPOSED' %}badge-default
-                {% elif a.status=='APPROVED' %}badge-info
-                {% elif a.status=='EXECUTING' %}badge-warning
-                {% elif a.status=='EXECUTED' %}badge-success
-                {% elif a.status=='VERIFIED' %}badge-success
-                {% elif a.status=='REJECTED' %}badge-destructive
-                {% else %}badge-default{% endif %}">{{ a.status }}</span>
-            </td>
-            <td data-label="Verificado" class="font-mono text-right">{{ a.verified_amount or '-' }}</td>
-            <td data-label="Finding"><span class="text-[hsl(var(--muted-foreground))] text-xs">Finding {{ a.finding_id[:8] if a.finding_id else '-' }}</span></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% if not actions %}
-    <div class="card p-8 text-center">
-      <svg class="mx-auto h-12 w-12 text-[hsl(var(--muted-foreground))]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-      <h3 class="mt-2 text-lg font-medium" style="color:hsl(var(--foreground))">Nenhuma action</h3>
-      <p class="mt-1 text-sm text-[hsl(var(--muted-foreground))]">Nenhuma ação pendente.</p>
-    </div>
-    {% endif %}
-  </section>
+<div class="page-head">
+  <span class="eyebrow">Governance</span>
+  <h1>Actions</h1>
+  <p class="page-sub">Ciclo de vida: PROPOSED → APPROVED → EXECUTING → EXECUTED → VERIFIED / REJECTED. Humanos governam cada transição.</p>
 </div>
+<section>
+  <div class="table-wrap elev-1">
+    <table class="table table-mobile-card table-sticky table-zebra">
+      <caption>{{ actions|length }} action(s) · rastreável em ledger</caption>
+      <thead><tr><th>ID</th><th>Título</th><th>Status</th><th class="num">Verificado</th><th>Finding</th></tr></thead>
+      <tbody>
+        {% for a in actions %}
+        <tr>
+          <td data-label="ID" class="font-mono t-muted">{{ a.id[:8] }}</td>
+          <td data-label="Título" class="t-fg">{{ a.title[:60] }}</td>
+          <td data-label="Status"><span class="badge {% if a.status=='PROPOSED' %}badge-default{% elif a.status=='APPROVED' %}badge-info{% elif a.status=='EXECUTING' %}badge-warning{% elif a.status=='EXECUTED' %}badge-success{% elif a.status=='VERIFIED' %}badge-success{% elif a.status=='REJECTED' %}badge-destructive{% else %}badge-default{% endif %}"><span class="dot"></span>{{ a.status }}</span></td>
+          <td data-label="Verificado" class="num t-fg">{{ a.verified_amount or '—' }}</td>
+          <td data-label="Finding"><span class="t-muted text-xs font-mono">Finding {{ a.finding_id[:8] if a.finding_id else '—' }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not actions %}
+  <div class="card empty-card mt-4">
+    <div class="empty-icon-ring"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg></div>
+    <h3 class="empty-title">Nenhuma action</h3>
+    <p class="empty-sub">Nenhuma ação pendente. Proponha a partir de um finding.</p>
+    <a href="/findings" class="btn btn-secondary pressable">Ver findings</a>
+  </div>
+  {% endif %}
+</section>
 {% endblock %}

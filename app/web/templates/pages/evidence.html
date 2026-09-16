@@ -1,65 +1,48 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto">
-  <section class="py-6 md:py-8">
-    <div class="max-w-2xl mx-auto">
-      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Evidence</h2>
-      <p class="text-sm text-[hsl(var(--muted-foreground))]">Evidence Packs findings. AI extraction + cálculo + provenance.</p>
-    </div>
-  </section>
-  <section class="py-6 md:py-8">
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2">
-        <h3 class="text-lg font-medium mb-3" style="color:hsl(var(--foreground))">Findings com Packs (últimos 20)</h3>
-        <div class="table-wrap">
-          <table class="table table-mobile-card">
-            <thead>
-              <tr>
-                <th data-label="ID">ID</th>
-                <th data-label="Título">Título</th>
-                <th data-label="Tipo">Tipo</th>
-                <th data-label="Status">Status</th>
-                <th data-label="Exposição">Exposição</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for f in packs %}
-              <tr>
-                <td data-label="ID" class="font-medium">{{ f.id }}</td>
-                <td data-label="Título">{{ f.title[:40] }}</td>
-                <td data-label="Tipo"><span class="badge badge-default">{{ f.kind }}</span></td>
-                <td data-label="Status"><span class="badge badge-default">{{ f.status }}</span></td>
-                <td data-label="Exposição" class="font-mono text-right">R$ {{ f.exposure_amount }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div>
-        <h3 class="text-lg font-medium mb-3" style="color:hsl(var(--foreground))">Evidências (últimos 20)</h3>
-        <div class="table-wrap">
-          <table class="table table-mobile-card">
-            <thead>
-              <tr>
-                <th data-label="ID">ID</th>
-                <th data-label="Kind">Kind</th>
-                <th data-label="Finding">Finding</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for e in evidences %}
-              <tr>
-                <td data-label="ID" class="font-medium">{{ e.id[:8] }}</td>
-                <td data-label="Kind"><span class="badge badge-default">{{ e.kind }}</span></td>
-                <td data-label="Finding"><span class="text-[hsl(var(--muted-foreground))] text-xs">Finding {{ e.finding_id[:8] }}</span></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </section>
+<div class="page-head">
+  <span class="eyebrow">Provenance</span>
+  <h1>Evidence</h1>
+  <p class="page-sub">Evidence Packs por finding. Extração AI + cálculo Python + provenance.</p>
 </div>
+<section>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2">
+      <h2 class="card-title mb-3">Findings com packs <span class="t-muted font-mono text-xs">· últimos 20</span></h2>
+      <div class="table-wrap elev-1">
+        <table class="table table-mobile-card table-sticky table-zebra">
+          <thead><tr><th>ID</th><th>Título</th><th>Tipo</th><th>Status</th><th class="num">Exposição</th></tr></thead>
+          <tbody>
+            {% for f in packs %}
+            <tr>
+              <td data-label="ID" class="font-mono t-muted">{{ f.id[:8] if f.id|length > 8 else f.id }}</td>
+              <td data-label="Título" class="t-fg">{{ f.title[:48] }}</td>
+              <td data-label="Tipo"><span class="badge badge-default">{{ f.kind }}</span></td>
+              <td data-label="Status"><span class="badge badge-outline">{{ f.status }}</span></td>
+              <td data-label="Exposição" class="num t-fg">R$ {{ f.exposure_amount or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h2 class="card-title mb-3">Evidências <span class="t-muted font-mono text-xs">· últimas 20</span></h2>
+      <div class="table-wrap elev-1">
+        <table class="table table-mobile-card table-zebra">
+          <thead><tr><th>ID</th><th>Kind</th><th>Finding</th></tr></thead>
+          <tbody>
+            {% for e in evidences %}
+            <tr>
+              <td data-label="ID" class="font-mono t-muted">{{ e.id[:8] }}</td>
+              <td data-label="Kind"><span class="badge badge-default">{{ e.kind }}</span></td>
+              <td data-label="Finding"><span class="t-muted text-xs font-mono">Finding {{ e.finding_id[:8] }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
 {% endblock %}

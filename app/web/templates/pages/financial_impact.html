@@ -1,51 +1,27 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto">
-  <section class="py-6 md:py-8">
-    <div class="max-w-2xl mx-auto">
-      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Financial Impact</h2>
-    </div>
-  </section>
-  <section class="py-6 md:py-8">
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div class="card p-6">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">Exposure (Ledger DEBIT)</div>
-        <div class="text-3xl font-bold" style="color:hsl(var(--destructive))" id="fi-exposure">{{ impact.exposure }}</div>
-        <div class="text-xs text-[hsl(var(--muted-foreground))] mt-1">R$ total em ledger como DEBIT</div>
-      </div>
-      <div class="card p-6">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">Verified (Ledger VERIFIED)</div>
-        <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="fi-verified">{{ impact.verified }}</div>
-        <div class="text-xs text-[hsl(var(--muted-foreground))] mt-1">R$ total em ledger como VERIFIED</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-      <div class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-1">DEBIT</div>
-        <div class="text-3xl font-bold" style="color:hsl(var(--destructive))" id="fi-debit">{{ impact.debit }}</div>
-        <div class="text-xs text-[hsl(var(--muted-foreground))]">Total DEBIT</div>
-      </div>
-      <div class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-1">CREDIT</div>
-        <div class="text-3xl font-bold" style="color:hsl(var(--muted-foreground))" id="fi-credit">{{ impact.credit or '0.00' }}</div>
-        <div class="text-xs text-[hsl(var(--muted-foreground))]">Total CREDIT</div>
-      </div>
-      <div class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-1">FINDINGS EXPOSURE</div>
-        <div class="text-3xl font-bold" style="color:hsl(38 92% 50%)" id="fi-findings-exp">{{ impact.exposure }}</div>
-        <div class="text-xs text-[hsl(var(--muted-foreground))]">{{ impact.count }} findings</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8 text-center">
-    <div class="card p-8">
-      <div class="text-4xl font-bold" id="fi-ledger-count">{{ impact.count }}</div>
-      <div class="text-xs text-[hsl(var(--muted-foreground))] mt-2">Lançamentos no ledger</div>
-    </div>
-  </section>
+<div class="page-head">
+  <div class="status-row"><span class="live-badge"><span class="pulse-dot"></span>Ledger</span><span class="date-line">{{ today }}</span></div>
+  <h1>Financial Impact</h1>
+  <p class="page-sub">Somente lançamentos reais do ledger. Nada estimado sem marca ~ e *.</p>
 </div>
+
+<section aria-label="Totais">
+  <div class="stat-grid stagger">
+    <div class="card card-content stat-card stat-span-2">
+      <div class="stat-top"><span class="stat-cap">Exposure · DEBIT</span><span class="stat-icon red">↓</span></div>
+      <div class="stat-value num t-danger">{{ impact.exposure|brl }}</div>
+      <div class="stat-sub">Total em ledger como DEBIT</div>
+    </div>
+    <div class="card card-content stat-card stat-span-2">
+      <div class="stat-top"><span class="stat-cap">Verified · VERIFIED</span><span class="stat-icon mint">✓</span></div>
+      <div class="stat-value num t-mint">{{ impact.verified|brl }}</div>
+      <div class="stat-sub">Total em ledger como VERIFIED</div>
+    </div>
+    <div class="card card-content"><div class="stat-cap mb-2">DEBIT</div><div class="stat-value num t-danger">{{ impact.debit|brl }}</div><div class="stat-sub">Total DEBIT</div></div>
+    <div class="card card-content"><div class="stat-cap mb-2">CREDIT</div><div class="stat-value num">{{ impact.credit|brl if impact.credit else 'R$ 0,00' }}</div><div class="stat-sub">Total CREDIT</div></div>
+    <div class="card card-content"><div class="stat-cap mb-2">Findings exposure</div><div class="stat-value num t-amber">{{ impact.exposure|brl }}</div><div class="stat-sub">{{ impact.count }} findings</div></div>
+    <div class="card card-content"><div class="stat-cap mb-2">Lançamentos</div><div class="stat-value num">{{ impact.count }}</div><div class="stat-sub">No ledger</div></div>
+  </div>
+</section>
 {% endblock %}

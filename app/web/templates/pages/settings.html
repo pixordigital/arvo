@@ -1,36 +1,26 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto">
-  <section class="py-6 md:py-8">
-    <div class="max-w-2xl mx-auto">
-      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Settings</h2>
-      <p class="text-sm text-[hsl(var(--muted-foreground))]">Configurações da organização. Tokens, domínios, membros.</p>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="grid grid-cols-1 gap-4">
-      {% for env in envs %}
-      <div class="card p-4 touch-target fade-in">
-        <div class="flex items-center gap-3 mb-2">
-          <span class="w-8 h-8 rounded-md bg-[hsl(var(--secondary))] flex items-center justify-center text-[hsl(var(--muted-foreground))] text-sm font-medium">{{ env.key[:3] }}</span>
-          <div>
-            <div class="font-medium" style="color:hsl(var(--foreground))">{{ env.key }}</div>
-            <div class="text-xs text-[hsl(var(--muted-foreground))]">{{ env.value_desc }}</div>
-          </div>
-        </div>
-        {% if env.is_secret %}
-        <button class="mt-2 w-full rounded-md bg-[hsl(var(--secondary))] text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive)/0.1)] text-xs py-1.5 font-medium touch-target" disabled>Secret — masked</button>
-        {% else %}
-        <button class="mt-2 w-full rounded-md bg-[hsl(var(--secondary))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--primary))] hover:text-[hsl(var(--primary-foreground))] text-xs py-1.5 font-medium touch-target" onclick="copyEnv('{{ env.key }}')">Copy</button>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8 text-center">
-    <button class="btn btn-primary touch-target" style="min-width: 200px;">Regenerate API Token</button>
-  </section>
+<div class="page-head">
+  <span class="eyebrow">Org</span>
+  <h1>Settings</h1>
+  <p class="page-sub">Tokens, domínios, membros. Segredos nunca renderizam valor real.</p>
 </div>
+<section>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 stagger">
+    {% for env in envs %}
+    <div class="card card-content">
+      <div class="integ-row mb-2">
+        <span class="stat-icon font-mono text-xs">{{ env.key[:3] }}</span>
+        <div><div class="font-medium t-fg font-mono text-sm">{{ env.key }}</div><div class="text-xs t-muted">{{ env.value_desc }}</div></div>
+      </div>
+      {% if env.is_secret %}<button class="copy-btn" disabled>Secret — masked</button>
+      {% else %}<button class="copy-btn pressable" onclick="copyEnv('{{ env.key }}')">Copy</button>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+<section class="mt-6 text-center">
+  <button class="btn btn-primary pressable" data-toast="Token regeneration em breve — via API">Regenerate API Token</button>
+  <p class="help mt-3">Ação sensível. Confirme no modal antes de revogar o token atual.</p>
+</section>
 {% endblock %}

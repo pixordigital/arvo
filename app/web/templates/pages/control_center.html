@@ -1,83 +1,71 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto">
-  <section class="py-6 md:py-8">
-    <div class="max-w-2xl mx-auto">
-      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Resumo da Organização</h2>
-      <p class="text-sm text-[hsl(var(--muted-foreground))]">Riscos e exposições identificados. Filtro por severidade abaixo.</p>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="grid-responsive">
-      <article class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Accounts</div>
-        <div class="text-3xl font-bold" id="cc-accounts">{{ stats.accounts }}</div>
-      </article>
-      <article class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Deals</div>
-        <div class="text-3xl font-bold" id="cc-opps">{{ stats.opps }}</div>
-      </article>
-      <article class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Findings</div>
-        <div class="text-3xl font-bold" style="color:hsl(38 92% 50%)" id="cc-findings">{{ stats.findings }}</div>
-      </article>
-      <article class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Verified</div>
-        <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="cc-verified">{{ stats.verified }}</div>
-        <div class="text-xs text-[hsl(var(--muted-foreground))]">Exposure R$ {{ stats.exposure }}</div>
-      </article>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="grid-responsive">
-      <a href="/findings" class="card p-3 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
-        <span class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] block mb-1">Findings</span>
-        <span class="text-lg font-bold" id="quick-cc-findings">0</span>
-      </a>
-      <a href="/deals" class="card p-3 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
-        <span class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] block mb-1">Deals</span>
-        <span class="text-lg font-bold" id="quick-cc-deals">0</span>
-      </a>
-      <a href="/financial-impact" class="card p-3 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
-        <span class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] block mb-1">Financial</span>
-        <span class="text-lg font-bold" id="quick-cc-verified">0.00</span>
-      </a>
-      <a href="/actions" class="card p-3 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
-        <span class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] block mb-1">Actions</span>
-        <span class="text-lg font-bold" id="quick-cc-actions">0</span>
-      </a>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="card p-4 md:p-6">
-      <h2 class="text-xl font-semibold mb-4" style="color:hsl(var(--primary))">Resumo de Vazamento</h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="leak-exp-total">0.00</div>
-          <div class="text-xs text-[hsl(var(--muted-foreground))]">Exposição Total</div>
-        </div>
-        <div>
-          <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="leak-ver-total">0.00</div>
-          <div class="text-xs text-[hsl(var(--muted-foreground))]">Verificada</div>
-        </div>
-        <div>
-          <div class="text-3xl font-bold" style="color:hsl(var(--destructive))" id="leak-critical">0</div>
-          <div class="text-xs text-[hsl(var(--muted-foreground))]">Críticos</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="py-4 pt-6 border-t border-[hsl(var(--border))]">
-    <div class="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
-      <a href="/findings" class="flex-1 min-w-[140px] rounded-md bg-[hsl(var(--secondary))] px-4 py-2.5 text-sm {% if active=='findings' %}bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]{% else %}text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]{% endif %} nav-pill touch-target text-center">Findings</a>
-      <a href="/deals" class="flex-1 min-w-[140px] rounded-md bg-[hsl(var(--secondary))] px-4 py-2.5 text-sm {% if active=='deals' %}bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]{% else %}text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]{% endif %} nav-pill touch-target text-center">Deals</a>
-      <a href="/accounts" class="flex-1 min-w-[140px] rounded-md bg-[hsl(var(--secondary))] px-4 py-2.5 text-sm {% if active=='accounts' %}bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]{% else %}text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]{% endif %} nav-pill touch-target text-center">Accounts</a>
-      <a href="/financial-impact" class="flex-1 min-w-[140px] rounded-md bg-[hsl(var(--secondary))] px-4 py-2.5 text-sm {% if active=='financial-impact' %}bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]{% else %}text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]{% endif %} nav-pill touch-target text-center">Financial Impact</a>
-    </div>
-  </section>
+<div class="page-head">
+  <div class="status-row"><span class="live-badge"><span class="pulse-dot"></span>Live</span><span class="date-line">{{ today }}</span></div>
+  <h1>Resumo da organização</h1>
+  <p class="page-sub">Riscos, exposição e valor verificado — direto do ledger.</p>
 </div>
+
+<section aria-label="Métricas">
+  <div class="stat-grid stagger">
+    <article class="card card-content stat-card">
+      <div class="stat-top"><span class="stat-cap">Accounts</span><span class="stat-icon violet"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span></div>
+      <div class="stat-value num">{{ stats.accounts }}</div>
+      <div class="stat-sub">Contas ativas</div>
+    </article>
+    <article class="card card-content stat-card">
+      <div class="stat-top"><span class="stat-cap">Deals</span><span class="stat-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span></div>
+      <div class="stat-value num">{{ stats.opps }}</div>
+      <div class="stat-sub">Em pipeline</div>
+    </article>
+    <article class="card card-content stat-card">
+      <div class="stat-top"><span class="stat-cap">Findings</span><span class="stat-icon amber"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span></div>
+      <div class="stat-value num t-amber">{{ stats.findings }}</div>
+      <div class="stat-sub">{{ stats.critical }} crítico(s)</div>
+    </article>
+    <article class="card card-content stat-card">
+      <div class="stat-top"><span class="stat-cap">Verified</span><span class="stat-icon mint"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+      <div class="stat-value num t-mint">{{ stats.verified|brl }}</div>
+      <div class="stat-sub">de {{ stats.exposure|brl }} expostos</div>
+    </article>
+  </div>
+</section>
+
+<section aria-label="Vazamento">
+  <div class="card card-featured mt-4">
+    <div class="card-header"><span class="eyebrow">Leak summary</span><h2 class="card-title">Exposição vs verificado</h2></div>
+    <div class="card-content">
+      <div class="leak-bar" role="img" aria-label="{{ stats.leak_pct_verified }}% verificado"><i class="fill-verified" style="width:{{ stats.leak_pct_verified }}%"></i><i class="fill-open" style="width:{{ stats.leak_pct_open }}%"></i></div>
+      <div class="leak-legend"><span><i class="swatch mint"></i>Verificado <b>{{ stats.verified|brl }}</b></span><span><i class="swatch amber"></i>Exposto <b>{{ stats.exposure|brl }}</b></span></div>
+    </div>
+  </div>
+</section>
+
+<section aria-label="Atenção">
+  <div class="section-row"><h2>Precisa de atenção</h2><a href="/findings" class="link">Ver tudo</a></div>
+  <nav class="action-list">
+    <a href="/findings" class="action-row pressable">
+      <span class="stat-icon amber">!</span>
+      <span class="action-row-body"><span class="action-row-title">Findings abertos</span><span class="action-row-sub block">{{ stats.critical }} crítico(s) · revisar severidade</span></span>
+      <span class="action-row-val t-amber">{{ stats.findings }}</span>
+      <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+    <a href="/deals" class="action-row pressable">
+      <span class="stat-icon">▸</span>
+      <span class="action-row-body"><span class="action-row-title">Deals em pipeline</span><span class="action-row-sub block">Oportunidades aguardando audit</span></span>
+      <span class="action-row-val">{{ stats.opps }}</span>
+      <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+    <a href="/actions" class="action-row pressable">
+      <span class="stat-icon violet">✓</span>
+      <span class="action-row-body"><span class="action-row-title">Governança</span><span class="action-row-sub block">Approve → execute → verify</span></span>
+      <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+    <a href="/financial-impact" class="action-row pressable">
+      <span class="stat-icon mint">R$</span>
+      <span class="action-row-body"><span class="action-row-title">Impacto financeiro</span><span class="action-row-sub block">Ledger DEBIT vs VERIFIED</span></span>
+      <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+  </nav>
+</section>
 {% endblock %}

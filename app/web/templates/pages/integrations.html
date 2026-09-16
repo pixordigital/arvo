@@ -1,50 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto">
-  <section class="py-6 md:py-8">
-    <div class="max-w-2xl mx-auto">
-      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Integrations</h2>
-      <p class="text-sm text-[hsl(var(--muted-foreground))]">Conexões ativas e sincronização.</p>
-    </div>
-  </section>
-  <section class="py-6 md:py-8">
-    <div class="grid grid-cols-1 gap-4">
-      {% for item in items %}
-      <div class="card p-4 touch-target fade-in">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-md bg-[hsl(var(--secondary))] flex items-center justify-center">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:hsl(var(--muted-foreground))">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-              <path d="M23 21l-5-5l5-5"/>
-            </svg>
-          </div>
-          <div>
-            <div class="font-medium" style="color:hsl(var(--foreground))">{{ item.source }}</div>
-            <div class="text-xs text-[hsl(var(--muted-foreground))]">{{ item.status }}</div>
-          </div>
-        </div>
-        {% if item.has_key %}
-        <span class="mt-2 inline-block text-xs font-medium" style="color:hsl(142 76% 36%)">Conectado</span>
-        {% else %}
-        <span class="mt-2 inline-block text-xs font-medium text-[hsl(var(--muted-foreground))]">Stub</span>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8 border-t border-[hsl(var(--border))] pt-6">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <h4 class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Fetched records</h4>
-        <p class="text-sm text-[hsl(var(--muted-foreground))]" id="integrations-counts">{{ counts | length if counts else 0 }}</p>
-      </div>
-      <div>
-        <h4 class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Sources</h4>
-        <p class="text-sm text-[hsl(var(--muted-foreground))]">CSV • Upload • Hubspot • Salesforce • Pipedrive • Twenty • Gmail • Outlook</p>
-      </div>
-    </div>
-  </section>
+<div class="page-head">
+  <span class="eyebrow">Sources</span>
+  <h1>Integrations</h1>
+  <p class="page-sub">Conexões ativas e sincronização. Stub = sem chave configurada.</p>
 </div>
+<section>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 stagger">
+    {% for item in items %}
+    <div class="card card-content card-hover hover-lift">
+      <div class="integ-row">
+        <span class="stat-icon {% if item.has_key %}mint{% endif %}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>
+        <div><div class="font-medium t-fg capitalize">{{ item.source }}</div><div class="text-xs t-muted font-mono">{{ item.status }}</div></div>
+      </div>
+      {% if item.has_key %}<span class="status-line ok"><span class="pulse-dot"></span>Conectado</span>
+      {% else %}<span class="status-line idle"><span class="dot"></span>Stub — configure a chave</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+<section class="mt-6">
+  <hr class="divider" />
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div><h3 class="stat-cap">Fetched records</h3><p class="stat-value num mt-1" id="integrations-counts">{{ counts | length if counts else 0 }}</p></div>
+    <div><h3 class="stat-cap">Sources</h3><p class="text-sm t-muted mt-1">CSV · Upload · Hubspot · Salesforce · Pipedrive · Twenty · Gmail · Outlook</p></div>
+  </div>
+</section>
 {% endblock %}

@@ -1,24 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-md mx-auto py-8 md:py-16">
-  <div class="card p-6 md:p-8">
-    <h2 class="text-2xl font-bold mb-2" style="color:hsl(var(--foreground))">Login</h2>
-    <p class="text-sm text-[hsl(var(--muted-foreground))] mb-6">Token salvo em cookie <code>arvo_token</code>. Sessions duram 1 hora.</p>
-    {% if error %}
-    <div class="mb-4 p-3 rounded-md bg-[hsl(var(--destructive)/0.1)] border border-[hsl(var(--destructive))] text-sm" style="color:hsl(var(--destructive))">{{ error }}</div>
-    {% endif %}
-    <form class="space-y-4" method="post">
-      <div>
-        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Email</label>
-        <input type="email" name="email" required class="input" placeholder="email@arvo.test" autocomplete="email" />
-      </div>
-      <div>
-        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Password</label>
-        <input type="password" name="password" required class="input" placeholder="password" autocomplete="current-password" />
-      </div>
-      <button type="submit" class="btn btn-primary w-full touch-target mt-2">Entrar</button>
+<div class="auth-wrap">
+  <div class="text-center mb-6"><div class="logo-mark mx-auto mb-3">A</div><h1 class="text-2xl font-bold tracking-tight t-fg">Login</h1><p class="page-sub mt-2">Token salvo em cookie <code>arvo_token</code>. Sessions duram 1 hora.</p></div>
+  <div class="card card-content elev-2">
+    {% if error %}<div class="alert-error" role="alert">{{ error }}</div>{% endif %}
+    <form class="form-stack" method="post">
+      <div class="field"><label for="login-email">Email</label><input id="login-email" type="email" name="email" required class="input" placeholder="email@arvo.test" autocomplete="email" /></div>
+      <div class="field"><label for="login-pass">Password</label><input id="login-pass" type="password" name="password" required class="input" placeholder="••••••••" autocomplete="current-password" /></div>
+      <button type="submit" class="btn btn-primary w-full pressable">Entrar</button>
     </form>
-    <p class="mt-6 text-center text-xs text-[hsl(var(--muted-foreground))]">Sem conta? <a href="/register" class="underline hover:text-[hsl(var(--primary))]">Criar org</a> • <a href="/api/docs" class="underline hover:text-[hsl(var(--primary))]">via API</a></p>
+    <p class="auth-foot">Sem conta? <a href="/register" class="link">Criar org</a> · <a href="/api/docs" class="link">via API</a></p>
   </div>
 </div>
 {% endblock %}

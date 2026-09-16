@@ -1,93 +1,80 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto">
-  <section class="py-8 md:py-16">
-    <div class="max-w-2xl mx-auto text-center">
-      <h1 class="text-3xl md:text-4xl font-bold tracking-tight mb-4" style="color:hsl(var(--foreground))">Find the leak. Protect the value. Control the revenue.</h1>
-      <p class="text-base md:text-lg text-[hsl(var(--muted-foreground))] mb-6">ARVO audita deals com AI (interpreta) + Python (calcula) + Ledger (lembra) + Evidence Pack (explica). Humanos governam — APPROVE → EXECUTE → VERIFY.</p>
-      <div class="grid grid-cols-2 gap-3 mb-4 max-w-md mx-auto">
-        <div class="card p-3">
-          <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">AI</div>
-          <div class="text-xl font-bold" style="color:hsl(var(--primary))">Interpretação</div>
-        </div>
-        <div class="card p-3">
-          <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Python</div>
-          <div class="text-xl font-bold" style="color:hsl(142 76% 36%)">Cálculo</div>
-        </div>
-      </div>
-      <p class="text-sm text-[hsl(var(--muted-foreground))] mt-4">Deploy: <code>178.105.181.38:9777</code> • Studio: <a href="{{ studio_url }}" target="_blank" class="underline text-[hsl(var(--muted-foreground))]">:9771</a></p>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="grid-responsive">
-      <article class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Accounts</div>
-        <div class="text-3xl font-bold" id="home-accounts">{{ stats.accounts }}</div>
-        <div class="text-[hsl(var(--muted-foreground))] mt-1">Total</div>
-      </article>
-      <article class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Deals</div>
-        <div class="text-3xl font-bold" id="home-opps">{{ stats.opps }}</div>
-        <div class="text-[hsl(var(--muted-foreground))] mt-1">Total</div>
-      </article>
-      <article class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Findings</div>
-        <div class="text-3xl font-bold" style="color:hsl(38 92% 50%)" id="home-findings">{{ stats.findings }}</div>
-        <div class="text-[hsl(var(--muted-foreground))] mt-1">Total</div>
-      </article>
-      <article class="card p-4">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Verified Impact</div>
-        <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="home-verified">{{ stats.verified }}</div>
-        <div class="text-[hsl(var(--muted-foreground))] mt-1">R$</div>
-      </article>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="grid-responsive">
-      <a href="/findings" class="card p-4 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">Findings</div>
-        <div class="text-lg font-bold" id="quick-findings-count">0</div>
-        <p class="text-[hsl(var(--muted-foreground))] line-clamp-2">Riscos e exposições detectados</p>
-      </a>
-      <a href="/deals" class="card p-4 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">Deals</div>
-        <div class="text-lg font-bold" id="quick-deals-count">0</div>
-        <p class="text-[hsl(var(--muted-foreground))] line-clamp-2">Oportunidades em pipeline</p>
-      </a>
-      <a href="/financial-impact" class="card p-4 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">Financial Impact</div>
-        <div class="text-lg font-bold" id="quick-impact-verified">0.00</div>
-        <p class="text-[hsl(var(--muted-foreground))] line-clamp-2">Exposição vs verificada</p>
-      </a>
-      <a href="/actions" class="card p-4 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
-        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">Actions</div>
-        <div class="text-lg font-bold" id="quick-actions-count">0</div>
-        <p class="text-[hsl(var(--muted-foreground))] line-clamp-2">Ações pendente/approved/executado</p>
-      </a>
-    </div>
-  </section>
-
-  <section class="py-6 md:py-8">
-    <div class="card p-4 md:p-6">
-      <h2 class="text-xl font-semibold mb-4" style="color:hsl(var(--primary))">Resumo de Vazamento</h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="leak-exposed">0.00</div>
-          <div class="text-xs text-[hsl(var(--muted-foreground))]">Exposição Total</div>
-        </div>
-        <div>
-          <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="leak-verified">0.00</div>
-          <div class="text-xs text-[hsl(var(--muted-foreground))]">Verificada</div>
-        </div>
-        <div>
-          <div class="text-3xl font-bold" style="color:hsl(var(--destructive))" id="leak-critical">0</div>
-          <div class="text-xs text-[hsl(var(--muted-foreground))]">Críticos</div>
-        </div>
-      </div>
-      <p class="mt-3 text-xs font-mono text-[hsl(var(--muted-foreground))]">PRINCÍPIO VERDADE — limites só de PLANS (app/core/config.py:PLANS) + limits.py</p>
-    </div>
-  </section>
+<div class="page-head center section-pad pb-0">
+  <span class="eyebrow">AI interpreta · Python calcula</span>
+  <h1 class="display">Find the leak. <span class="grad-text">Protect the value.</span> Control the revenue.</h1>
+  <p class="lead t-muted">ARVO audita deals com Ledger idempotente + Evidence Pack explicável. Humanos governam — APPROVE → EXECUTE → VERIFY.</p>
+  <div class="flex flex-wrap justify-center gap-3 mt-6">
+    <a href="/findings" class="btn btn-primary btn-lg pressable">Ver findings</a>
+    <a href="/financial-impact" class="btn btn-secondary btn-lg pressable">Financial impact</a>
+  </div>
+  <div class="steps-strip">
+    <div class="card step"><span class="step-num">1</span><span class="step-name">APPROVE — humano autoriza</span></div>
+    <div class="card step"><span class="step-num">2</span><span class="step-name">EXECUTE — ledger registra</span></div>
+    <div class="card step"><span class="step-num">3</span><span class="step-name">VERIFY — evidence prova</span></div>
+  </div>
 </div>
+
+<section aria-label="Métricas">
+  <div class="stat-grid stagger">
+    <article class="card card-content stat-card">
+      <div class="stat-top"><span class="stat-cap">Accounts</span><span class="stat-icon violet">◈</span></div>
+      <div class="stat-value num">{{ stats.accounts }}</div>
+      <div class="stat-sub">Contas no ledger</div>
+    </article>
+    <article class="card card-content stat-card">
+      <div class="stat-top"><span class="stat-cap">Deals</span><span class="stat-icon">▸</span></div>
+      <div class="stat-value num">{{ stats.opps }}</div>
+      <div class="stat-sub">Em pipeline</div>
+    </article>
+    <article class="card card-content stat-card">
+      <div class="stat-top"><span class="stat-cap">Findings</span><span class="stat-icon amber">!</span></div>
+      <div class="stat-value num t-amber">{{ stats.findings }}</div>
+      <div class="stat-sub">Riscos detectados</div>
+    </article>
+    <article class="card card-content stat-card">
+      <div class="stat-top"><span class="stat-cap">Verified</span><span class="stat-icon mint">✓</span></div>
+      <div class="stat-value num t-mint">{{ stats.verified|brl }}</div>
+      <div class="stat-sub">Valor verificado</div>
+    </article>
+  </div>
+</section>
+
+<section aria-label="Comece por aqui">
+  <div class="section-row"><h2>Comece por aqui</h2></div>
+  <nav class="action-list">
+    <a href="/findings" class="action-row pressable">
+      <span class="stat-icon amber">!</span>
+      <span class="action-row-body"><span class="action-row-title">Findings</span><span class="action-row-sub block">Riscos e exposições detectados</span></span>
+      <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+    <a href="/deals" class="action-row pressable">
+      <span class="stat-icon">▸</span>
+      <span class="action-row-body"><span class="action-row-title">Deals</span><span class="action-row-sub block">Oportunidades em pipeline</span></span>
+      <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+    <a href="/financial-impact" class="action-row pressable">
+      <span class="stat-icon mint">R$</span>
+      <span class="action-row-body"><span class="action-row-title">Financial impact</span><span class="action-row-sub block">Exposição vs verificada</span></span>
+      <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+    <a href="/actions" class="action-row pressable">
+      <span class="stat-icon violet">✓</span>
+      <span class="action-row-body"><span class="action-row-title">Actions</span><span class="action-row-sub block">Proposed → approved → executed</span></span>
+      <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
+  </nav>
+</section>
+
+<section aria-label="Resumo de vazamento">
+  <div class="card card-featured mt-4">
+    <div class="card-header"><span class="eyebrow">Leak summary</span><h2 class="card-title">Resumo de vazamento</h2></div>
+    <div class="card-content grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div><div class="stat-value num t-mint">{{ stats.exposure|brl }}</div><div class="stat-label">Exposição total</div></div>
+      <div><div class="stat-value num t-mint">{{ stats.verified|brl }}</div><div class="stat-label">Verificada</div></div>
+      <div><div class="stat-value num t-amber">{{ stats.findings }}</div><div class="stat-label">Findings abertos</div></div>
+    </div>
+    <div class="card-footer"><p class="help">PRINCÍPIO VERDADE — limites só de PLANS + limits.py. Sem número inventado.</p></div>
+  </div>
+</section>
 {% endblock %}
