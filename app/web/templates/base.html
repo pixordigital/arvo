@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>{{ title }} — {{ app_name }}</title>
   <meta name="description" content="ARVO — Find the leak. Protect the value. Control the revenue.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/design-system.css">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
@@ -37,7 +40,8 @@
   <aside class="sidebar" aria-label="Menu lateral" role="navigation">
     <div class="sidebar-head p-4 border-b border-[hsl(var(--sidebar-border))]">
       <div class="logo-wrap flex items-center gap-3 min-w-0 flex-1">
-        <div class="sidebar-logo font-bold tracking-tight text-lg" style="color:hsl(var(--sidebar-foreground))">ARVO</div>
+        <div class="logo-mark">A</div>
+        <div class="sidebar-logo font-bold tracking-tight text-lg" style="color:hsl(var(--foreground))">ARVO</div>
         <div class="sidebar-label text-xs text-[hsl(var(--sidebar-muted-foreground))] uppercase tracking-wider">Find the leak</div>
       </div>
       <button class="sidebar-toggle touch-target" id="sidebar-toggle" aria-label="Colapsar/Expandir" title="Colapsar/Expandir">
