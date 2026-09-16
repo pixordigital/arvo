@@ -1,28 +1,65 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-6xl space-y-6">
-  <h2 class="font-semibold">Evidence Pack — rastreabilidade por finding</h2>
-  {% if packs and packs|length>0 %}
-  <div class="space-y-3">
-    {% for p in packs %}
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-      <div class="flex justify-between"><div class="font-medium text-sm">{{ p.title }}</div><div class="text-xs px-2 py-1 rounded bg-slate-800">{{ p.status }} • {{ p.kind }}</div></div>
-      <div class="mt-2 text-xs text-slate-400">provenance: <code class="bg-slate-800 px-1 rounded">{{ p.provenance }}</code></div>
-      <div class="mt-2 text-xs text-slate-300">pack: <code class="bg-slate-800 px-1 rounded break-all">{{ p.pack }}</code></div>
-      <a href="/findings" class="text-xs text-cyan-400 mt-2 inline-block">ver finding {{ p.id[:8] }}</a>
+<div class="max-w-7xl mx-auto">
+  <section class="py-6 md:py-8">
+    <div class="max-w-2xl mx-auto">
+      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Evidence</h2>
+      <p class="text-sm text-[hsl(var(--muted-foreground))]">Evidence Packs findings. AI extraction + cálculo + provenance.</p>
     </div>
-    {% endfor %}
-  </div>
-  {% else %}
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 text-sm text-slate-400">Nenhum evidence pack — faça ingest ou crie finding via <code>/api/v1</code>.</div>
-  {% endif %}
-  {% if evidences and evidences|length>0 %}
-  <h3 class="font-medium text-sm text-slate-300 mt-6">FindingEvidences ({{ evidences|length }})</h3>
-  <div class="space-y-2">
-    {% for e in evidences %}
-    <div class="bg-slate-800 border border-slate-700 rounded-lg p-3 text-xs"><span class="font-mono">{{ e.kind }}</span> — finding {{ e.finding_id[:8] }} — <code class="break-all">{{ e.content }}</code></div>
-    {% endfor %}
-  </div>
-  {% endif %}
+  </section>
+  <section class="py-6 md:py-8">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2">
+        <h3 class="text-lg font-medium mb-3" style="color:hsl(var(--foreground))">Findings com Packs (últimos 20)</h3>
+        <div class="table-wrap">
+          <table class="table table-mobile-card">
+            <thead>
+              <tr>
+                <th data-label="ID">ID</th>
+                <th data-label="Título">Título</th>
+                <th data-label="Tipo">Tipo</th>
+                <th data-label="Status">Status</th>
+                <th data-label="Exposição">Exposição</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in packs %}
+              <tr>
+                <td data-label="ID" class="font-medium">{{ f.id }}</td>
+                <td data-label="Título">{{ f.title[:40] }}</td>
+                <td data-label="Tipo"><span class="badge badge-default">{{ f.kind }}</span></td>
+                <td data-label="Status"><span class="badge badge-default">{{ f.status }}</span></td>
+                <td data-label="Exposição" class="font-mono text-right">R$ {{ f.exposure_amount }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <h3 class="text-lg font-medium mb-3" style="color:hsl(var(--foreground))">Evidências (últimos 20)</h3>
+        <div class="table-wrap">
+          <table class="table table-mobile-card">
+            <thead>
+              <tr>
+                <th data-label="ID">ID</th>
+                <th data-label="Kind">Kind</th>
+                <th data-label="Finding">Finding</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for e in evidences %}
+              <tr>
+                <td data-label="ID" class="font-medium">{{ e.id[:8] }}</td>
+                <td data-label="Kind"><span class="badge badge-default">{{ e.kind }}</span></td>
+                <td data-label="Finding"><span class="text-[hsl(var(--muted-foreground))] text-xs">Finding {{ e.finding_id[:8] }}</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
 </div>
 {% endblock %}

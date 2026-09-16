@@ -1,16 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-md mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6">
-  <h2 class="font-semibold">Criar organização</h2>
-  <p class="text-xs text-slate-400 mt-1">OWNER criado + org vinculada. Plano inicial: <code>starter</code>.</p>
-  <form method="post" action="/register" class="mt-4 space-y-3">
-    <input name="email" type="email" placeholder="email" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
-    <input name="password" type="password" placeholder="password (≥6)" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
-    <input name="org_name" placeholder="Nome da organização" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
-    <input name="org_slug" placeholder="slug (ex: acme)" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
-    <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg py-2 text-sm font-medium">Criar e entrar</button>
-  </form>
-  {% if error %}<div class="mt-3 text-xs text-red-400">{{ error }}</div>{% endif %}
-  <div class="mt-3 text-xs text-slate-500">Já tem conta? <a href="/login" class="underline">Login</a></div>
+<div class="max-w-md mx-auto py-8 md:py-16">
+  <div class="card p-6 md:p-8">
+    <h2 class="text-2xl font-bold mb-2" style="color:hsl(var(--foreground))">Criar organização</h2>
+    <p class="text-sm text-[hsl(var(--muted-foreground))] mb-6">OWNER criado + org vinculada. Plano inicial: <code>starter</code>.</p>
+    {% if error %}
+    <div class="mb-4 p-3 rounded-md bg-[hsl(var(--destructive)/0.1)] border border-[hsl(var(--destructive))] text-sm" style="color:hsl(var(--destructive))">{{ error }}</div>
+    {% endif %}
+    <form class="space-y-4" method="post">
+      <div>
+        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Email</label>
+        <input type="email" name="email" required class="input" placeholder="email@arvo.test" autocomplete="email" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Password</label>
+        <input type="password" name="password" required class="input" placeholder="password (≥6)" autocomplete="new-password" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Nome da organização</label>
+        <input type="text" name="org_name" required class="input" placeholder="ARVO" autocomplete="organization" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-2" style="color:hsl(var(--foreground))">Slug</label>
+        <input type="text" name="org_slug" required class="input" placeholder="arvo" autocomplete="off" />
+      </div>
+      <button type="submit" class="btn btn-primary w-full touch-target mt-2" style="background-color:hsl(142 76% 36%);">Criar e entrar</button>
+    </form>
+    <p class="mt-6 text-center text-xs text-[hsl(var(--muted-foreground))]">Já tem conta? <a href="/login" class="underline hover:text-[hsl(var(--primary))]">Login</a></p>
+  </div>
 </div>
 {% endblock %}

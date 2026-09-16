@@ -1,11 +1,51 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-5xl space-y-4">
-  <div class="grid grid-cols-3 gap-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Findings Exposure</div><div class="text-xl font-bold">R$ {{ impact.exposure }}</div><div class="text-xs text-slate-500">{{ impact.count }} findings</div></div>
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Ledger Debit</div><div class="text-xl font-bold">R$ {{ impact.debit }}</div></div>
-    <div class="bg-emerald-950 border border-emerald-800 rounded-xl p-4"><div class="text-xs text-emerald-400">Verified</div><div class="text-xl font-bold text-emerald-400">R$ {{ impact.verified }}</div></div>
-  </div>
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs text-slate-500">Ledger = código calcula, não LLM. Double-count protegido por idempotency.</div>
+<div class="max-w-7xl mx-auto">
+  <section class="py-6 md:py-8">
+    <div class="max-w-2xl mx-auto">
+      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Financial Impact</h2>
+    </div>
+  </section>
+  <section class="py-6 md:py-8">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div class="card p-6">
+        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">Exposure (Ledger DEBIT)</div>
+        <div class="text-3xl font-bold" style="color:hsl(var(--destructive))" id="fi-exposure">{{ impact.exposure }}</div>
+        <div class="text-xs text-[hsl(var(--muted-foreground))] mt-1">R$ total em ledger como DEBIT</div>
+      </div>
+      <div class="card p-6">
+        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">Verified (Ledger VERIFIED)</div>
+        <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="fi-verified">{{ impact.verified }}</div>
+        <div class="text-xs text-[hsl(var(--muted-foreground))] mt-1">R$ total em ledger como VERIFIED</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-6 md:py-8">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div class="card p-4">
+        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-1">DEBIT</div>
+        <div class="text-3xl font-bold" style="color:hsl(var(--destructive))" id="fi-debit">{{ impact.debit }}</div>
+        <div class="text-xs text-[hsl(var(--muted-foreground))]">Total DEBIT</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-1">CREDIT</div>
+        <div class="text-3xl font-bold" style="color:hsl(var(--muted-foreground))" id="fi-credit">{{ impact.credit or '0.00' }}</div>
+        <div class="text-xs text-[hsl(var(--muted-foreground))]">Total CREDIT</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-1">FINDINGS EXPOSURE</div>
+        <div class="text-3xl font-bold" style="color:hsl(38 92% 50%)" id="fi-findings-exp">{{ impact.exposure }}</div>
+        <div class="text-xs text-[hsl(var(--muted-foreground))]">{{ impact.count }} findings</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-6 md:py-8 text-center">
+    <div class="card p-8">
+      <div class="text-4xl font-bold" id="fi-ledger-count">{{ impact.count }}</div>
+      <div class="text-xs text-[hsl(var(--muted-foreground))] mt-2">Lançamentos no ledger</div>
+    </div>
+  </section>
 </div>
 {% endblock %}

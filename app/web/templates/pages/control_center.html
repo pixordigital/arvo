@@ -1,19 +1,83 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-6xl space-y-6">
-  <div class="grid grid-cols-4 gap-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Accounts</div><div class="text-2xl font-bold">{{ stats.accounts }}</div></div>
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Deals</div><div class="text-2xl font-bold">{{ stats.opps }}</div></div>
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Findings</div><div class="text-2xl font-bold text-amber-400">{{ stats.findings }}</div></div>
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="text-xs text-slate-400">Verified Impact</div><div class="text-2xl font-bold text-emerald-400">R$ {{ stats.verified }}</div><div class="text-xs text-slate-500">Exposure R$ {{ stats.exposure }}</div></div>
-  </div>
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-    <h2 class="font-semibold">Control Center — arvo-demo</h2>
-    <p class="text-sm text-slate-400 mt-1">Vertical slice vivo: ingest → finding → action → verified.</p>
-    <div class="mt-4 flex gap-2">
-      <a href="/findings" class="bg-white text-slate-900 px-4 py-2 rounded-lg text-sm font-medium">Ver Findings</a>
-      <a href="/financial-impact" class="bg-slate-800 px-4 py-2 rounded-lg text-sm">Financial Impact</a>
+<div class="max-w-7xl mx-auto">
+  <section class="py-6 md:py-8">
+    <div class="max-w-2xl mx-auto">
+      <h2 class="text-2xl md:text-3xl font-bold mb-4" style="color:hsl(var(--foreground))">Resumo da Organização</h2>
+      <p class="text-sm text-[hsl(var(--muted-foreground))]">Riscos e exposições identificados. Filtro por severidade abaixo.</p>
     </div>
-  </div>
+  </section>
+
+  <section class="py-6 md:py-8">
+    <div class="grid-responsive">
+      <article class="card p-4">
+        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Accounts</div>
+        <div class="text-3xl font-bold" id="cc-accounts">{{ stats.accounts }}</div>
+      </article>
+      <article class="card p-4">
+        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Deals</div>
+        <div class="text-3xl font-bold" id="cc-opps">{{ stats.opps }}</div>
+      </article>
+      <article class="card p-4">
+        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Findings</div>
+        <div class="text-3xl font-bold" style="color:hsl(38 92% 50%)" id="cc-findings">{{ stats.findings }}</div>
+      </article>
+      <article class="card p-4">
+        <div class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">Verified</div>
+        <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="cc-verified">{{ stats.verified }}</div>
+        <div class="text-xs text-[hsl(var(--muted-foreground))]">Exposure R$ {{ stats.exposure }}</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="py-6 md:py-8">
+    <div class="grid-responsive">
+      <a href="/findings" class="card p-3 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
+        <span class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] block mb-1">Findings</span>
+        <span class="text-lg font-bold" id="quick-cc-findings">0</span>
+      </a>
+      <a href="/deals" class="card p-3 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
+        <span class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] block mb-1">Deals</span>
+        <span class="text-lg font-bold" id="quick-cc-deals">0</span>
+      </a>
+      <a href="/financial-impact" class="card p-3 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
+        <span class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] block mb-1">Financial</span>
+        <span class="text-lg font-bold" id="quick-cc-verified">0.00</span>
+      </a>
+      <a href="/actions" class="card p-3 hover:bg-[hsl(var(--accent))] transition-colors touch-target">
+        <span class="text-xs font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))] block mb-1">Actions</span>
+        <span class="text-lg font-bold" id="quick-cc-actions">0</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="py-6 md:py-8">
+    <div class="card p-4 md:p-6">
+      <h2 class="text-xl font-semibold mb-4" style="color:hsl(var(--primary))">Resumo de Vazamento</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="leak-exp-total">0.00</div>
+          <div class="text-xs text-[hsl(var(--muted-foreground))]">Exposição Total</div>
+        </div>
+        <div>
+          <div class="text-3xl font-bold" style="color:hsl(142 76% 36%)" id="leak-ver-total">0.00</div>
+          <div class="text-xs text-[hsl(var(--muted-foreground))]">Verificada</div>
+        </div>
+        <div>
+          <div class="text-3xl font-bold" style="color:hsl(var(--destructive))" id="leak-critical">0</div>
+          <div class="text-xs text-[hsl(var(--muted-foreground))]">Críticos</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-4 pt-6 border-t border-[hsl(var(--border))]">
+    <div class="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
+      <a href="/findings" class="flex-1 min-w-[140px] rounded-md bg-[hsl(var(--secondary))] px-4 py-2.5 text-sm {% if active=='findings' %}bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]{% else %}text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]{% endif %} nav-pill touch-target text-center">Findings</a>
+      <a href="/deals" class="flex-1 min-w-[140px] rounded-md bg-[hsl(var(--secondary))] px-4 py-2.5 text-sm {% if active=='deals' %}bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]{% else %}text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]{% endif %} nav-pill touch-target text-center">Deals</a>
+      <a href="/accounts" class="flex-1 min-w-[140px] rounded-md bg-[hsl(var(--secondary))] px-4 py-2.5 text-sm {% if active=='accounts' %}bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]{% else %}text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]{% endif %} nav-pill touch-target text-center">Accounts</a>
+      <a href="/financial-impact" class="flex-1 min-w-[140px] rounded-md bg-[hsl(var(--secondary))] px-4 py-2.5 text-sm {% if active=='financial-impact' %}bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]{% else %}text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]{% endif %} nav-pill touch-target text-center">Financial Impact</a>
+    </div>
+  </section>
 </div>
 {% endblock %}
