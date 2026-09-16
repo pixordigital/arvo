@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head center">
-  <span class="eyebrow">Pricing</span>
-  <h1>Limites reais do código</h1>
-  <p class="page-sub">Princípio inegociável 2026-09-13: nunca prometer o que o código não entrega. Números abaixo = PLANS verdadeiros. Voz/estimativas com ~ e *.</p>
+<div class="page-head">
+  <p class="kicker">Pricing from source</p>
+  <h1 class="page-title">Limits as written in code</h1>
+  <p class="page-sub">Never promise what the code does not deliver. Figures below are the true PLANS. Estimates carry ~ and *.</p>
 </div>
 
-<section aria-label="Planos">
-  <div class="grid-responsive stagger">
+<section aria-label="Plans">
+  <div class="grid-responsive">
     {% for name, plan in plans.items() %}
     <div class="card card-content card-hover hover-lift plan-card {% if name=='pro' %}card-featured{% endif %}">
       <div class="stat-cap {% if name=='pro' %}t-mint{% endif %}">{% if name=='pro' %}— recomendado · {% endif %}{{ name }}</div>

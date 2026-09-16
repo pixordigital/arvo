@@ -1,69 +1,69 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-  <div class="status-row"><span class="live-badge"><span class="pulse-dot"></span>Live</span><span class="date-line">{{ today }}</span></div>
-  <h1>Resumo da organização</h1>
-  <p class="page-sub">Riscos, exposição e valor verificado — direto do ledger.</p>
+  <p class="kicker">Control center · {{ today }}</p>
+  <h1 class="page-title">Organization summary</h1>
+  <p class="page-sub">Risk, exposure, and proven value — read straight from the ledger.</p>
 </div>
 
-<section aria-label="Métricas">
-  <div class="stat-grid stagger">
+<section aria-label="Metrics">
+  <div class="stat-grid">
     <article class="card card-content stat-card">
       <div class="stat-top"><span class="stat-cap">Accounts</span><span class="stat-icon violet"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span></div>
       <div class="stat-value num">{{ stats.accounts }}</div>
-      <div class="stat-sub">Contas ativas</div>
+      <div class="stat-sub">Active accounts</div>
     </article>
     <article class="card card-content stat-card">
       <div class="stat-top"><span class="stat-cap">Deals</span><span class="stat-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span></div>
       <div class="stat-value num">{{ stats.opps }}</div>
-      <div class="stat-sub">Em pipeline</div>
+      <div class="stat-sub">In pipeline</div>
     </article>
     <article class="card card-content stat-card">
       <div class="stat-top"><span class="stat-cap">Findings</span><span class="stat-icon amber"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span></div>
       <div class="stat-value num t-amber">{{ stats.findings }}</div>
-      <div class="stat-sub">{{ stats.critical }} crítico(s)</div>
+      <div class="stat-sub">{{ stats.critical }} critical</div>
     </article>
     <article class="card card-content stat-card">
       <div class="stat-top"><span class="stat-cap">Verified</span><span class="stat-icon mint"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></span></div>
       <div class="stat-value num t-mint">{{ stats.verified|brl }}</div>
-      <div class="stat-sub">de {{ stats.exposure|brl }} expostos</div>
+      <div class="stat-sub">of {{ stats.exposure|brl }} exposed</div>
     </article>
   </div>
 </section>
 
-<section aria-label="Vazamento">
-  <div class="card card-featured mt-4">
-    <div class="card-header"><span class="eyebrow">Leak summary</span><h2 class="card-title">Exposição vs verificado</h2></div>
+<section aria-label="Exposure">
+  <div class="ledger-sheet mt-4">
+    <div class="ledger-sheet-head"><strong>Exposure against verified</strong><span>{{ stats.leak_pct_verified }}% proven</span></div>
     <div class="card-content">
-      <div class="leak-bar" role="img" aria-label="{{ stats.leak_pct_verified }}% verificado"><i class="fill-verified" style="width:{{ stats.leak_pct_verified }}%"></i><i class="fill-open" style="width:{{ stats.leak_pct_open }}%"></i></div>
-      <div class="leak-legend"><span><i class="swatch mint"></i>Verificado <b>{{ stats.verified|brl }}</b></span><span><i class="swatch amber"></i>Exposto <b>{{ stats.exposure|brl }}</b></span></div>
+      <div class="leak-bar" role="img" aria-label="{{ stats.leak_pct_verified }}% verified"><i class="fill-verified" style="width:{{ stats.leak_pct_verified }}%"></i><i class="fill-open" style="width:{{ stats.leak_pct_open }}%"></i></div>
+      <div class="leak-legend"><span><i class="swatch mint"></i>Verified <b>{{ stats.verified|brl }}</b></span><span><i class="swatch amber"></i>Exposed <b>{{ stats.exposure|brl }}</b></span></div>
     </div>
   </div>
 </section>
 
-<section aria-label="Atenção">
-  <div class="section-row"><h2>Precisa de atenção</h2><a href="/findings" class="link">Ver tudo</a></div>
+<section aria-label="Needs attention">
+  <div class="section-row"><h2>Needs attention</h2><a href="/findings" class="link">See all</a></div>
   <nav class="action-list">
     <a href="/findings" class="action-row pressable">
       <span class="stat-icon amber">!</span>
-      <span class="action-row-body"><span class="action-row-title">Findings abertos</span><span class="action-row-sub block">{{ stats.critical }} crítico(s) · revisar severidade</span></span>
+      <span class="action-row-body"><span class="action-row-title">Open findings</span><span class="action-row-sub block">{{ stats.critical }} critical · check severity</span></span>
       <span class="action-row-val t-amber">{{ stats.findings }}</span>
       <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
     <a href="/deals" class="action-row pressable">
       <span class="stat-icon">▸</span>
-      <span class="action-row-body"><span class="action-row-title">Deals em pipeline</span><span class="action-row-sub block">Oportunidades aguardando audit</span></span>
+      <span class="action-row-body"><span class="action-row-title">Deals in pipeline</span><span class="action-row-sub block">Awaiting audit</span></span>
       <span class="action-row-val">{{ stats.opps }}</span>
       <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
     <a href="/actions" class="action-row pressable">
       <span class="stat-icon violet">✓</span>
-      <span class="action-row-body"><span class="action-row-title">Governança</span><span class="action-row-sub block">Approve → execute → verify</span></span>
+      <span class="action-row-body"><span class="action-row-title">Governance</span><span class="action-row-sub block">Approve, execute, verify</span></span>
       <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
     <a href="/financial-impact" class="action-row pressable">
       <span class="stat-icon mint">R$</span>
-      <span class="action-row-body"><span class="action-row-title">Impacto financeiro</span><span class="action-row-sub block">Ledger DEBIT vs VERIFIED</span></span>
+      <span class="action-row-body"><span class="action-row-title">Financial impact</span><span class="action-row-sub block">Ledger DEBIT against VERIFIED</span></span>
       <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
   </nav>

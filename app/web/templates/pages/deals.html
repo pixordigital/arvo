@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-  <span class="eyebrow">Pipeline</span>
-  <h1>Deals</h1>
-  <p class="page-sub">Oportunidades em pipeline, com etapa e valor auditável.</p>
+  <p class="kicker">Pipeline under audit</p>
+  <h1 class="page-title">Deals</h1>
+  <p class="page-sub">Each stage and amount stays on record.</p>
 </div>
 <section>
   <div class="table-wrap elev-1">
-    <table class="table table-mobile-card table-sticky table-zebra">
+    <table class="table table-ledger table-mobile-card table-sticky table-zebra">
       <caption>{{ deals|length }} deal(s) em pipeline</caption>
       <thead><tr><th>ID</th><th>Nome</th><th>Stage</th><th class="num">Valor</th><th>Moeda</th></tr></thead>
       <tbody>

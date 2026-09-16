@@ -1,80 +1,91 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head center section-pad pb-0">
-  <span class="eyebrow">AI interpreta · Python calcula</span>
-  <h1 class="display">Find the leak. <span class="grad-text">Protect the value.</span> Control the revenue.</h1>
-  <p class="lead t-muted">ARVO audita deals com Ledger idempotente + Evidence Pack explicável. Humanos governam — APPROVE → EXECUTE → VERIFY.</p>
-  <div class="flex flex-wrap justify-center gap-3 mt-6">
-    <a href="/findings" class="btn btn-primary btn-lg pressable">Ver findings</a>
-    <a href="/financial-impact" class="btn btn-secondary btn-lg pressable">Financial impact</a>
+<div class="dossier-hero">
+  <div>
+    <p class="kicker">Audit desk — AI reads, Python proves</p>
+    <h1 class="display-dossier">Find the leak. <em>Keep the receipt.</em></h1>
+    <p class="lead t-muted mt-4" style="max-width:34rem">ARVO checks each deal against an idempotent ledger and attaches an evidence pack. Nothing moves without a human signature.</p>
+    <div class="flex flex-wrap gap-3 mt-6">
+      <a href="/findings" class="btn btn-primary btn-lg pressable">Open findings</a>
+      <a href="/financial-impact" class="btn btn-secondary btn-lg pressable">Financial impact</a>
+    </div>
+    <div class="stamp-rail" aria-label="Governance">
+      <span class="stamp">Approve<small>human signs</small></span>
+      <span class="stamp-link" aria-hidden="true">→</span>
+      <span class="stamp">Execute<small>ledger writes</small></span>
+      <span class="stamp-link" aria-hidden="true">→</span>
+      <span class="stamp done">Verify<small>evidence proves</small></span>
+    </div>
   </div>
-  <div class="steps-strip">
-    <div class="card step"><span class="step-num">1</span><span class="step-name">APPROVE — humano autoriza</span></div>
-    <div class="card step"><span class="step-num">2</span><span class="step-name">EXECUTE — ledger registra</span></div>
-    <div class="card step"><span class="step-num">3</span><span class="step-name">VERIFY — evidence prova</span></div>
-  </div>
+  <aside class="ledger-sheet" aria-label="Current ledger excerpt">
+    <div class="ledger-sheet-head"><strong>Ledger excerpt</strong><span>{{ today }}</span></div>
+    <div class="ledger-row"><span class="k">Exposure on findings</span><span class="v neg">{{ stats.exposure|brl }}</span></div>
+    <div class="ledger-row"><span class="k">Verified in ledger</span><span class="v pos">{{ stats.verified|brl }}</span></div>
+    <div class="ledger-row"><span class="k">Open findings</span><span class="v">{{ stats.findings }}</span></div>
+    <div class="ledger-row"><span class="k">Deals in pipeline</span><span class="v">{{ stats.opps }}</span></div>
+    <div class="ledger-row"><span class="k">Accounts on record</span><span class="v">{{ stats.accounts }}</span></div>
+    <div class="ledger-foot">Every figure above is a live ledger read. <b>No estimates.</b></div>
+  </aside>
 </div>
 
-<section aria-label="Métricas">
-  <div class="stat-grid stagger">
+<section aria-label="Metrics">
+  <div class="stat-grid">
     <article class="card card-content stat-card">
       <div class="stat-top"><span class="stat-cap">Accounts</span><span class="stat-icon violet">◈</span></div>
       <div class="stat-value num">{{ stats.accounts }}</div>
-      <div class="stat-sub">Contas no ledger</div>
+      <div class="stat-sub">On record</div>
     </article>
     <article class="card card-content stat-card">
       <div class="stat-top"><span class="stat-cap">Deals</span><span class="stat-icon">▸</span></div>
       <div class="stat-value num">{{ stats.opps }}</div>
-      <div class="stat-sub">Em pipeline</div>
+      <div class="stat-sub">In pipeline</div>
     </article>
     <article class="card card-content stat-card">
       <div class="stat-top"><span class="stat-cap">Findings</span><span class="stat-icon amber">!</span></div>
       <div class="stat-value num t-amber">{{ stats.findings }}</div>
-      <div class="stat-sub">Riscos detectados</div>
+      <div class="stat-sub">Open risks</div>
     </article>
     <article class="card card-content stat-card">
       <div class="stat-top"><span class="stat-cap">Verified</span><span class="stat-icon mint">✓</span></div>
       <div class="stat-value num t-mint">{{ stats.verified|brl }}</div>
-      <div class="stat-sub">Valor verificado</div>
+      <div class="stat-sub">Proven value</div>
     </article>
   </div>
 </section>
 
-<section aria-label="Comece por aqui">
-  <div class="section-row"><h2>Comece por aqui</h2></div>
+<section aria-label="Start here">
+  <div class="section-row"><h2>Start here</h2></div>
   <nav class="action-list">
     <a href="/findings" class="action-row pressable">
       <span class="stat-icon amber">!</span>
-      <span class="action-row-body"><span class="action-row-title">Findings</span><span class="action-row-sub block">Riscos e exposições detectados</span></span>
+      <span class="action-row-body"><span class="action-row-title">Findings</span><span class="action-row-sub block">Risks and exposures on record</span></span>
       <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
     <a href="/deals" class="action-row pressable">
       <span class="stat-icon">▸</span>
-      <span class="action-row-body"><span class="action-row-title">Deals</span><span class="action-row-sub block">Oportunidades em pipeline</span></span>
+      <span class="action-row-body"><span class="action-row-title">Deals</span><span class="action-row-sub block">Pipeline under audit</span></span>
       <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
     <a href="/financial-impact" class="action-row pressable">
       <span class="stat-icon mint">R$</span>
-      <span class="action-row-body"><span class="action-row-title">Financial impact</span><span class="action-row-sub block">Exposição vs verificada</span></span>
+      <span class="action-row-body"><span class="action-row-title">Financial impact</span><span class="action-row-sub block">Exposure against verified</span></span>
       <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
     <a href="/actions" class="action-row pressable">
       <span class="stat-icon violet">✓</span>
-      <span class="action-row-body"><span class="action-row-title">Actions</span><span class="action-row-sub block">Proposed → approved → executed</span></span>
+      <span class="action-row-body"><span class="action-row-title">Actions</span><span class="action-row-sub block">Proposed, approved, executed</span></span>
       <svg class="action-row-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
   </nav>
 </section>
 
-<section aria-label="Resumo de vazamento">
-  <div class="card card-featured mt-4">
-    <div class="card-header"><span class="eyebrow">Leak summary</span><h2 class="card-title">Resumo de vazamento</h2></div>
-    <div class="card-content grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div><div class="stat-value num t-mint">{{ stats.exposure|brl }}</div><div class="stat-label">Exposição total</div></div>
-      <div><div class="stat-value num t-mint">{{ stats.verified|brl }}</div><div class="stat-label">Verificada</div></div>
-      <div><div class="stat-value num t-amber">{{ stats.findings }}</div><div class="stat-label">Findings abertos</div></div>
-    </div>
-    <div class="card-footer"><p class="help">PRINCÍPIO VERDADE — limites só de PLANS + limits.py. Sem número inventado.</p></div>
+<section aria-label="Leak summary">
+  <div class="ledger-sheet mt-4">
+    <div class="ledger-sheet-head"><strong>Leak summary</strong><span>DEBIT vs verified</span></div>
+    <div class="ledger-row"><span class="k">Total exposure</span><span class="v neg">{{ stats.exposure|brl }}</span></div>
+    <div class="ledger-row"><span class="k">Verified</span><span class="v pos">{{ stats.verified|brl }}</span></div>
+    <div class="ledger-row"><span class="k">Open findings</span><span class="v">{{ stats.findings }}</span></div>
+    <div class="ledger-foot">Limits enforced from PLANS. Figures not shown do not exist.</div>
   </div>
 </section>
 {% endblock %}

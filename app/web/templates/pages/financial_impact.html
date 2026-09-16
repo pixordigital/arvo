@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-  <div class="status-row"><span class="live-badge"><span class="pulse-dot"></span>Ledger</span><span class="date-line">{{ today }}</span></div>
-  <h1>Financial Impact</h1>
-  <p class="page-sub">Somente lançamentos reais do ledger. Nada estimado sem marca ~ e *.</p>
+  <p class="kicker">Ledger only · {{ today }}</p>
+  <h1 class="page-title">Financial impact</h1>
+  <p class="page-sub">Real ledger entries only. Estimates always carry ~ and *.</p>
 </div>
 
-<section aria-label="Totais">
-  <div class="stat-grid stagger">
+<section aria-label="Totals">
+  <div class="stat-grid">
     <div class="card card-content stat-card stat-span-2">
       <div class="stat-top"><span class="stat-cap">Exposure · DEBIT</span><span class="stat-icon red">↓</span></div>
       <div class="stat-value num t-danger">{{ impact.exposure|brl }}</div>

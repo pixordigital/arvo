@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-  <span class="eyebrow">Risk ledger</span>
-  <h1>Findings</h1>
-  <p class="page-sub">Riscos e exposições detectados, com severidade e status auditáveis.</p>
+  <p class="kicker">Risk ledger</p>
+  <h1 class="page-title">Findings</h1>
+  <p class="page-sub">Detected risks with auditable severity and status.</p>
 </div>
 <section>
   <div class="table-wrap elev-1">
-    <table class="table table-mobile-card table-sticky table-zebra">
+    <table class="table table-ledger table-mobile-card table-sticky table-zebra">
       <caption>{{ findings|length }} finding(s) · ordenado por detecção</caption>
       <thead><tr><th>ID</th><th>Título</th><th>Tipo</th><th>Severidade</th><th>Status</th><th class="num">Exposição</th><th>Moeda</th></tr></thead>
       <tbody>
