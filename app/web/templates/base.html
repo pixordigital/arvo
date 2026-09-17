@@ -22,47 +22,48 @@
   </script>
 </head>
 <body class="safe-top safe-bottom">
-  <nav class="bottom-nav" aria-label="Navegação principal" role="navigation">
+  <nav class="bottom-nav" aria-label="Primary">
     {% for label, href, key, icon in bottom_nav %}
     <a href="{{ href }}"
        class="nav-item touch-target"
-       hx-get="{{ href }}"
-       hx-target="#main-content"
-       hx-swap="outerHTML"
-       hx-push-url="true"
        {% if active==key %}aria-current="page"{% endif %}>
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="touch-target-sm">{{ icon|safe }}</svg>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">{{ icon|safe }}</svg>
       <span class="nav-label">{{ label }}</span>
     </a>
     {% endfor %}
   </nav>
 
-  <aside class="sidebar" aria-label="Menu lateral" role="navigation">
+  <aside class="sidebar" aria-label="Filing cabinet" id="sidebar">
     <div class="sidebar-head">
-      <div class="logo-wrap">
-        <div class="logo-mark">A</div>
-        <div class="logo-text">
-          <div class="sidebar-logo">ARVO</div>
-          <div class="sidebar-label">Find the leak</div>
-        </div>
-      </div>
-      <button class="sidebar-toggle touch-target" id="sidebar-toggle" aria-label="Colapsar/Expandir" title="Colapsar/Expandir">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <a href="/" class="logo-wrap" aria-label="ARVO control center">
+        <span class="logo-mark" aria-hidden="true">A</span>
+        <span class="logo-text">
+          <span class="sidebar-logo">ARVO</span>
+          <span class="sidebar-label">Find the leak</span>
+        </span>
+      </a>
+      <button class="sidebar-toggle touch-target" id="sidebar-toggle" aria-label="Collapse rail" aria-expanded="true" aria-controls="sidebar" title="Collapse rail">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
         </svg>
       </button>
     </div>
-    <nav class="sidebar-nav">
-      {% for label, href, key, icon in nav %}
+    <nav class="sidebar-nav" aria-label="Sections">
+      {% set groups = [
+        ("Audit desk", ["control-center", "findings", "deals", "accounts", "financial-impact"]),
+        ("Governance", ["actions", "evidence"]),
+        ("Workspace", ["home", "integrations", "settings"])
+      ] %}
+      {% for title, keys in groups %}
+      <p class="nav-group" aria-hidden="true">{{ title }}</p>
+      {% for label, href, key, icon in nav if key in keys %}
       <a href="{{ href }}"
-         hx-get="{{ href }}"
-         hx-target="#main-content"
-         hx-swap="outerHTML"
-         hx-push-url="true"
+         data-tip="{{ label }}"
          {% if active==key %}aria-current="page"{% endif %}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="flex-shrink-0">{{ icon|safe }}</svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="flex-shrink-0" aria-hidden="true">{{ icon|safe }}</svg>
         <span class="nav-text truncate">{{ label }}</span>
       </a>
+      {% endfor %}
       {% endfor %}
     </nav>
     <div class="sidebar-foot">
@@ -83,7 +84,7 @@
   <main class="main" id="main-content" role="main">
     <header class="topbar">
       <div class="topbar-left">
-        <button class="sidebar-toggle touch-target md:hidden" id="sidebar-toggle-mobile" aria-label="Abrir menu">
+        <button class="sidebar-toggle touch-target md:hidden" id="sidebar-toggle-mobile" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
         </button>
         <a href="/" class="brand md:hidden" aria-label="ARVO home"><span class="logo-mark logo-mark-sm">A</span></a>

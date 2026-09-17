@@ -175,6 +175,27 @@ async def logout():
 
 
 @router.get("/", response_class=HTMLResponse)
+async def home_root(request: Request):
+    from sqlalchemy import select, func
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Account, Opportunity, Finding, FinancialLedger
+    from app.core.config import PLANS
+    org_id = await _demo_org_id()
+    stats = {"accounts": 0, "opps": 0, "findings": 0, "exposure": "0.00", "verified": "0.00"}
+    if org_id:
+        from app.services.financial import sum_amounts
+        async with get_sessionmaker()() as s:
+            stats["accounts"] = (await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))).scalar()
+            stats["opps"] = (await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))).scalar()
+            stats["findings"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar()
+            exp_vals = (await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))).scalars().all()
+            stats["exposure"] = sum_amounts(exp_vals)
+            ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalars().all()
+            stats["verified"] = sum_amounts(ver_vals)
+    return templates.TemplateResponse(request, "pages/home.html", _ctx("Home", "home", {"plans": PLANS, "stats": stats}, request))
+
+
+@router.get("/control-center", response_class=HTMLResponse)
 async def control_center(request: Request):
     from sqlalchemy import select, func
     from app.database.engine import get_sessionmaker

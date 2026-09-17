@@ -31,69 +31,80 @@
 
   initTheme();
 
-  // Sidebar collapse (desktop)
+  // Sidebar: desktop collapse rail vs mobile drawer are separate behaviors.
+  // (Was: burger bound to both, overlay called the wrong closer, and the
+  // collapse toggle hid itself — a one-way trap. Each fixed below.)
   const sidebar = document.querySelector('.sidebar');
-  const sidebarToggles = document.querySelectorAll('#sidebar-toggle, #sidebar-toggle-mobile');
   const overlay = document.getElementById('sidebar-overlay');
-  const main = document.querySelector('.main');
+  const collapseBtn = document.getElementById('sidebar-toggle');
+  const drawerBtn = document.getElementById('sidebar-toggle-mobile');
+  const mqDesktop = window.matchMedia('(min-width: 768px)');
+  const norm = (p) => (p.length > 1 ? p.replace(/\/+$/, '') : p);
 
-  function toggleSidebar(collapse) {
-    if (collapse === undefined) collapse = !sidebar.classList.contains('collapsed');
+  function setCollapsed(collapse) {
+    // Look .main up fresh: htmx swaps used to replace it, leaving stale refs.
+    const main = document.querySelector('.main');
     sidebar.classList.toggle('collapsed', collapse);
-    main.classList.toggle('sidebar-collapsed', collapse);
-    localStorage.setItem('arvo-sidebar-collapsed', collapse);
+    main?.classList.toggle('sidebar-collapsed', collapse);
+    collapseBtn?.setAttribute('aria-expanded', String(!collapse));
+    try { localStorage.setItem('arvo-sidebar-collapsed', String(collapse)); } catch { /* private mode */ }
   }
 
-  sidebarToggles.forEach(btn => btn.addEventListener('click', () => toggleSidebar()));
-  overlay?.addEventListener('click', () => toggleSidebar(false));
-
-  // Mobile sidebar open/close
-  function openSidebar() {
+  function openDrawer() {
     sidebar.classList.add('open');
-    overlay.classList.remove('hidden');
+    overlay?.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
+    drawerBtn?.setAttribute('aria-expanded', 'true');
+    // Move focus into the drawer for keyboard users.
+    sidebar.querySelector('.sidebar-nav a')?.focus({ preventScroll: true });
   }
-  function closeSidebar() {
+  function closeDrawer() {
+    if (!sidebar.classList.contains('open')) return;
     sidebar.classList.remove('open');
-    overlay.classList.add('hidden');
+    overlay?.classList.add('hidden');
     document.body.style.overflow = '';
+    drawerBtn?.setAttribute('aria-expanded', 'false');
   }
 
-  // Restore sidebar state
-  if (localStorage.getItem('arvo-sidebar-collapsed') === 'true') toggleSidebar(true);
+  collapseBtn?.addEventListener('click', () => {
+    setCollapsed(!sidebar.classList.contains('collapsed'));
+  });
+  drawerBtn?.addEventListener('click', () => {
+    // Mobile burger only drives the drawer — never desktop collapse state.
+    if (sidebar.classList.contains('open')) closeDrawer();
+    else openDrawer();
+  });
+  overlay?.addEventListener('click', closeDrawer);
 
-  // Mobile sidebar toggle
-  const mobileToggle = document.getElementById('sidebar-toggle-mobile');
-  if (mobileToggle) {
-    mobileToggle.addEventListener('click', () => {
-      if (sidebar.classList.contains('open')) {
-        closeSidebar();
-      } else {
-        openSidebar();
-      }
-    });
-  }
-
-  // Close sidebar on navigation (mobile)
-  document.body.addEventListener('htmx:beforeRequest', () => {
-    if (window.innerWidth < 768) closeSidebar();
+  // Restore desktop rail state (desktop only; never leak collapse to mobile).
+  try {
+    if (mqDesktop.matches && localStorage.getItem('arvo-sidebar-collapsed') === 'true') setCollapsed(true);
+    else setCollapsed(false);
+  } catch { /* private mode */ }
+  mqDesktop.addEventListener?.('change', (e) => {
+    if (!e.matches) { setCollapsed(false); closeDrawer(); }
   });
 
-  // Bottom nav + sidebar active state sync (CSS owns colors via [aria-current])
+  // Close drawer on navigation (plain links; chrome no longer htmx-swaps).
+  document.body.addEventListener('htmx:beforeRequest', () => closeDrawer());
+  document.querySelectorAll('.sidebar-nav a').forEach((a) => {
+    a.addEventListener('click', () => closeDrawer());
+  });
+
+  // Active-state sync (server already renders aria-current; this only
+  // normalizes trailing slashes client-side).
   function syncActiveState() {
-    const path = window.location.pathname;
-    document.querySelectorAll('.nav-item, .sidebar-nav a, .pill').forEach(el => {
+    const path = norm(window.location.pathname);
+    document.querySelectorAll('.nav-item, .sidebar-nav a, .pill').forEach((el) => {
       const href = el.getAttribute('href');
-      if (!href) return;
-      const isActive = href === path;
-      if (isActive) el.setAttribute('aria-current', 'page');
+      if (!href || !href.startsWith('/')) return;
+      if (norm(href.split('?')[0]) === path) el.setAttribute('aria-current', 'page');
       else el.removeAttribute('aria-current');
     });
   }
 
   document.body.addEventListener('htmx:afterSwap', syncActiveState);
   window.addEventListener('popstate', syncActiveState);
-  // Initial sync
   syncActiveState();
 
   // Toast helper — elements with [data-toast] show transient feedback
@@ -138,10 +149,11 @@
   // Also check after HTMX swaps
   document.body.addEventListener('htmx:afterSwap', updateTableHints);
 
-  // Keyboard navigation for sidebar (desktop)
+  // Keyboard: Escape closes the drawer, focus returns to the burger.
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && sidebar?.classList.contains('open')) {
-      closeSidebar();
+      closeDrawer();
+      drawerBtn?.focus({ preventScroll: true });
     }
   });
 
