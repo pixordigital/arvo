@@ -392,16 +392,30 @@ html.light .sidebar-nav a[aria-current="page"] { color: #007a5c !important; back
 .sidebar-toggle:hover, .theme-toggle:hover { color: hsl(var(--foreground)); border-color: #2a2a2a; }
 @media (max-width: 767px) {
   .sidebar {
-    position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-w); z-index: 50;
+    position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-w); z-index: 110;
     transform: translateX(-100%); display: flex !important; flex-direction: column;
+    height: 100dvh; max-height: 100dvh;
+    padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
+    overflow: hidden;
   }
   .sidebar.open { transform: translateX(0); }
   .sidebar-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 40;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 109;
     opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s;
   }
   .sidebar-overlay:not(.hidden) { opacity: 1; visibility: visible; }
+  .sidebar-nav {
+    gap: 0.25rem; padding: 0.75rem 0.75rem calc(0.75rem + var(--safe-bottom));
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .sidebar-nav a { min-height: 44px; }
   .main { margin-left: 0 !important; }
+  /* drawer covers bottom rail — hide it while open to avoid peek-through */
+  body:has(.sidebar.open) .bottom-nav,
+  body.drawer-open .bottom-nav {
+    transform: translateY(130%); opacity: 0; pointer-events: none;
+  }
+  .bottom-nav { transition: transform 0.2s var(--ease-out), opacity 0.2s; }
 }
 @media (min-width: 768px) {
   .sidebar {

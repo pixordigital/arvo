@@ -54,6 +54,7 @@
     sidebar.classList.add('open');
     overlay?.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
+    document.body.classList.add('drawer-open');
     drawerBtn?.setAttribute('aria-expanded', 'true');
     // Move focus into the drawer for keyboard users.
     sidebar.querySelector('.sidebar-nav a')?.focus({ preventScroll: true });
@@ -63,6 +64,7 @@
     sidebar.classList.remove('open');
     overlay?.classList.add('hidden');
     document.body.style.overflow = '';
+    document.body.classList.remove('drawer-open');
     drawerBtn?.setAttribute('aria-expanded', 'false');
   }
 
