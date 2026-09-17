@@ -1,25 +1,243 @@
-{% extends "base.html" %}
-{% block content %}
-<div class="page-shell">
-  <section class="hero-section" aria-label="ARVO landing">
-    <div class="hero-content">
-      <p class="hero-kicker">Governança que move seu ledger</p>
-      <h1 class="hero-headline">Encontre o vazamento.<br><span class="accent-text">Mantenha o ledger limpo.</span></h1>
-      <p class="hero-lead lead t-muted" style="max-width: 64ch">
-        ARVO valida cada negociação contra um ledger idempotente e anexa um pacote de evidências.
-        Nada se move sem assinatura humana — e agora, cada aprovação é auditable, rastreável e definitiva.
-      </p>
-      <p class="t-muted small" style="max-width: 48ch">Limites enforcados do PLANS. Figures not shown do not exist.</p>
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>ARVO — Encontre o vazamento. Mantenha o ledger limpo.</title>
+  <meta name="description" content="ARVO valida cada negociação contra um ledger idempotente e anexa um pacote de evidências. Nada se move sem assinatura humana.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/design-system.css">
+</head>
+<body class="landing">
+  <!-- Landing header — not filing-cabinet sidebar. Quiet, left-aligned, brass mark. -->
+  <header class="landing-header" role="banner">
+    <div class="landing-header-inner">
+      <a href="/" class="landing-brand" aria-label="ARVO — Find the leak">
+        <span class="logo-mark">A</span>
+        <span class="landing-brand-text">
+          <strong>ARVO</strong>
+          <span>Find the leak</span>
+        </span>
+      </a>
+      <nav class="landing-nav" aria-label="Seções">
+        <a href="#como">Como funciona</a>
+        <a href="#recursos">Recursos</a>
+        <a href="#limites">Limites</a>
+        <a href="#integracoes">Integrações</a>
+      </nav>
+      <div class="landing-actions">
+        <a href="/login" class="btn btn-ghost">Entrar</a>
+        <a href="/register" class="btn btn-primary">Criar conta</a>
+      </div>
     </div>
+  </header>
 
-    <div class="hero-cta flex flex-col sm:flex-row gap-4 mt-8 max-w-2xl mx-auto">
-      <a href="/register" class="btn btn-primary btn-lg pressable w-full sm:w-auto">
-        Criar conta
-      </a>
-      <a href="/login" class="btn btn-secondary btn-lg pressable w-full sm:w-auto">
-        Entrar
-      </a>
+  <main id="main">
+    <!-- HERO — left copy + right ledger proof. One bold thing: the ledger sheet. -->
+    <section class="landing-hero" aria-label="Hero">
+      <div class="landing-hero-grid">
+        <div class="landing-hero-copy">
+          <p class="kicker">Governança que move seu ledger</p>
+          <h1 class="display-dossier">Encontre o vazamento.<br><em>Mantenha o ledger limpo.</em></h1>
+          <p class="landing-lead">ARVO valida cada negociação contra um ledger idempotente e anexa um pacote de evidências. AI lê, Python prova, humano assina — e agora, cada aprovação é auditável, rastreável e definitiva.</p>
+          <div class="landing-cta">
+            <a href="/register" class="btn btn-primary btn-lg pressable">Criar conta — grátis</a>
+            <a href="/login" class="btn btn-secondary btn-lg pressable">Entrar</a>
+            <span class="landing-cta-note">Sem cartão. Ledger isolado por org.</span>
+          </div>
+          <div class="landing-trust" aria-label="Proposta em 3 partes">
+            <div><strong>AI lê</strong><span>— extrai deal, deal_owner, next_step</span></div>
+            <div><strong>Python prova</strong><span>— soma em Decimal, sem float</span></div>
+            <div><strong>Humano assina</strong><span>— Approve → Execute → Verify</span></div>
+          </div>
+          <p class="landing-truth small t-muted">Limites enforcados do PLANS. Figures not shown do not exist.</p>
+        </div>
+        <aside class="landing-hero-proof" aria-label="Excerto do ledger — ao vivo">
+          <div class="ledger-sheet elev-1">
+            <div class="ledger-sheet-head"><strong>Excerto ao vivo</strong><span>{{ today }} · RLS org</span></div>
+            <div class="ledger-row"><span class="k">Exposure em findings</span><span class="v neg">{{ stats.exposure|brl }}</span></div>
+            <div class="ledger-row"><span class="k">Verified no ledger</span><span class="v pos">{{ stats.verified|brl }}</span></div>
+            <div class="ledger-row"><span class="k">Findings abertos</span><span class="v num">{{ stats.findings }}</span></div>
+            <div class="ledger-row"><span class="k">Deals em pipeline</span><span class="v num">{{ stats.opps }}</span></div>
+            <div class="ledger-row"><span class="k">Contas on record</span><span class="v num">{{ stats.accounts }}</span></div>
+            <div class="ledger-foot">Todo número acima é leitura direta do ledger. <b>Sem estimativas.</b> <span class="t-muted">PLANS: starter {{ plans.starter.max_findings }} · pro {{ plans.pro.max_findings }} · enterprise {{ plans.enterprise.max_findings }} findings.</span></div>
+          </div>
+          <p class="landing-proof-caption">Se o Demo não existe, os zeros são verdadeiros — não mock.</p>
+        </aside>
+      </div>
+      <div class="stamp-rail" aria-label="Governança">
+        <span class="stamp">Approve<small>humano assina</small></span>
+        <span class="stamp-link" aria-hidden="true">→</span>
+        <span class="stamp">Execute<small>ledger escreve</small></span>
+        <span class="stamp-link" aria-hidden="true">→</span>
+        <span class="stamp done">Verify<small>evidência prova</small></span>
+      </div>
+    </section>
+
+    <!-- COMO — sequência real, não 01/02/03 decorativo -->
+    <section id="como" class="landing-section">
+      <div class="landing-section-head">
+        <p class="kicker">Sequência — não atalho</p>
+        <h2 class="page-title">Nada se move sem carimbo.</h2>
+      </div>
+      <div class="landing-seq">
+        <div class="landing-seq-row">
+          <span class="step-num">1</span>
+          <div>
+            <h3>Approve</h3>
+            <p>Ação proposta a partir de um finding. Humano com capability revisa e assina. Sem assinatura, sem escrita.</p>
+          </div>
+        </div>
+        <div class="landing-seq-row">
+          <span class="step-num">2</span>
+          <div>
+            <h3>Execute</h3>
+            <p>Escrita idempotente no FinancialLedger. Mesma idempotency_key não duplica. Python soma em Decimal, não float.</p>
+          </div>
+        </div>
+        <div class="landing-seq-row">
+          <span class="step-num">3</span>
+          <div>
+            <h3>Verify</h3>
+            <p>Evidence pack anexado com provenance. Audit desk confirma. Valor só conta como <em>verified</em> se trilha existe.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECURSOS — o que o produto faz, em linguagem do usuário -->
+    <section id="recursos" class="landing-section">
+      <div class="landing-section-head">
+        <p class="kicker">Recursos</p>
+        <h2 class="page-title">Seis livros. Um ledger.</h2>
+        <p class="page-sub" style="max-width:38rem">Cada objeto é um caderno com régua. Sem cartões genéricos — linhas, rótulos e números tabulares como num razão.</p>
+      </div>
+      <div class="landing-features">
+        <article class="landing-feature">
+          <div class="landing-feature-head">
+            <span class="stat-icon amber">!</span>
+            <h3>Findings</h3>
+          </div>
+          <p>Riscos e exposições em registro. <code>kind</code>, <code>severity</code>, <code>exposure_amount</code> em BRL com 2 casas.</p>
+          <a href="/findings" class="row-link">Abrir findings →</a>
+        </article>
+        <article class="landing-feature">
+          <div class="landing-feature-head">
+            <span class="stat-icon">▸</span>
+            <h3>Deals</h3>
+          </div>
+          <p>Pipeline sob auditoria. Stage, amount, currency — validados contra ledger, não planilha.</p>
+          <a href="/deals" class="row-link">Ver deals →</a>
+        </article>
+        <article class="landing-feature">
+          <div class="landing-feature-head">
+            <span class="stat-icon violet">◈</span>
+            <h3>Accounts</h3>
+          </div>
+          <p>Contas on record. PROSPECT ou CUSTOMER. Filtro por tipo, sem duplicidade por org.</p>
+          <a href="/accounts" class="row-link">Ver contas →</a>
+        </article>
+        <article class="landing-feature">
+          <div class="landing-feature-head">
+            <span class="stat-icon mint">R$</span>
+            <h3>Financial Impact</h3>
+          </div>
+          <p>Exposure contra verified. DEBIT vs VERIFIED no mesmo ledger — barra de vazamento honesta.</p>
+          <a href="/financial-impact" class="row-link">Ver impacto →</a>
+        </article>
+        <article class="landing-feature">
+          <div class="landing-feature-head">
+            <span class="stat-icon violet">✓</span>
+            <h3>Actions</h3>
+          </div>
+          <p>Propostas, aprovadas, executadas. Cada transição exige capability — OWNER/MEMBER com permissão.</p>
+          <a href="/actions" class="row-link">Ver actions →</a>
+        </article>
+        <article class="landing-feature">
+          <div class="landing-feature-head">
+            <span class="stat-icon">⬢</span>
+            <h3>Evidence</h3>
+          </div>
+          <p>Pacote de provas por finding. <code>evidence_pack</code> + <code>FindingEvidence</code> com provenance.</p>
+          <a href="/evidence" class="row-link">Ver evidências →</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- LIMITES — verdade do código. Princípio inegociável. -->
+    <section id="limites" class="landing-section">
+      <div class="landing-section-head">
+        <p class="kicker">Princípio verdade</p>
+        <h2 class="page-title">Limites como escritos no código</h2>
+        <p class="page-sub">Nunca prometer o que o código não entrega. Abaixo, leitura direta de <code>PLANS</code>. Estimativas levam ~ e *.</p>
+      </div>
+      <div class="grid-responsive">
+        {% for name, plan in plans.items() %}
+        <div class="card card-content plan-card {% if name=='pro' %}card-featured{% endif %}">
+          <div class="stat-cap {% if name=='pro' %}t-mint{% endif %}">{% if name=='pro' %}— recomendado · {% endif %}{{ name }}</div>
+          <div class="plan-metrics">
+            <div class="plan-metric"><div class="stat-cap">Orgs</div><div class="v num">{{ plan.max_orgs }}</div></div>
+            <div class="plan-metric"><div class="stat-cap">Users</div><div class="v num">{{ plan.max_users }}</div></div>
+            <div class="plan-metric"><div class="stat-cap">Accounts</div><div class="v num">{{ plan.max_accounts }}</div></div>
+            <div class="plan-metric"><div class="stat-cap">Findings</div><div class="v num">{{ plan.max_findings }}</div></div>
+          </div>
+          <a href="/register" class="btn {% if name=='pro' %}btn-primary{% else %}btn-secondary{% endif %} w-full pressable">Começar — {{ name }}</a>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="card card-content mt-4" style="border-style:dashed">
+        <ul class="space-y-2 text-sm t-muted" style="margin:0; padding-left:1.2rem; list-style:disc">
+          <li>Todos os planos incluem: ledger idempotente, evidence pack, RLS org-isolation, deal audit, LGPD export/delete.</li>
+          <li>*Estimativa: ~R$ exposto recuperável depende de deal mix; não garantido. Use Financial Impact para real.</li>
+          <li>Limite não exibido aqui é fictício. Se não está em PLANS, não existe. Veja <a href="/pricing" class="link">/pricing</a>.</li>
+          <li>Upgrade: trocar <code>org.extra_data.plan</code> → starter|pro|enterprise; limites aplicados imediatamente.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- INTEGRAÇÕES -->
+    <section id="integracoes" class="landing-section">
+      <div class="landing-section-head">
+        <p class="kicker">Integrações</p>
+        <h2 class="page-title">CRM lê. CSV entra. Upload prova.</h2>
+        <p class="page-sub">Adaptadores com chave real ou stub explícito. Sem promessa fantasma.</p>
+      </div>
+      <div class="landing-integrations">
+        <span class="badge badge-default">HubSpot</span>
+        <span class="badge badge-default">Salesforce</span>
+        <span class="badge badge-default">Pipedrive</span>
+        <span class="badge badge-default">Twenty</span>
+        <span class="badge badge-default">Gmail</span>
+        <span class="badge badge-default">Outlook</span>
+        <span class="badge badge-outline">CSV</span>
+        <span class="badge badge-outline">Upload</span>
+      </div>
+      <p class="small t-muted mt-3">Status por org em <a href="/integrations" class="link">/integrations</a> — configured ou stub, contagem por <code>RawRecord.source</code>.</p>
+    </section>
+
+    <!-- FECHO -->
+    <section class="landing-close">
+      <div class="landing-close-card card card-content">
+        <h2 class="display-dossier" style="font-size:clamp(1.6rem,3.5vw,2.2rem); margin-bottom:0.6rem">Controle a receita. <em>Com recibo.</em></h2>
+        <p class="page-sub" style="max-width:36rem">Crie sua org, convide 5 no starter, importe contas e abra o primeiro finding. Ledger lembra. Evidence explica.</p>
+        <div class="flex flex-wrap gap-3 mt-6">
+          <a href="/register" class="btn btn-primary btn-lg pressable">Criar conta</a>
+          <a href="/login" class="btn btn-secondary btn-lg pressable">Entrar</a>
+          <a href="/control-center" class="btn btn-ghost">Ver Control Center →</a>
+        </div>
+        <p class="small t-muted mt-4">Humanos governam. <a href="/api/docs" class="link">API docs</a> · <a href="{{ studio_url }}" class="link" target="_blank" rel="noopener">Supabase Studio</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="landing-footer">
+    <div class="landing-footer-inner">
+      <span class="small t-muted">ARVO 0.1.0 — AI lê. Python prova. Humano assina.</span>
+      <span class="small t-muted">Limites enforcados do PLANS. Figures not shown do not exist.</span>
     </div>
-  </section>
-</div>
-{% endblock %}
+  </footer>
+</body>
+</html>
