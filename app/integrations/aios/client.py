@@ -1,5 +1,6 @@
-"""Cliente HTTP para o peer AIOS (Fase 1D + payload). Assina requests via auth.sign_request."""
+"""Cliente HTTP para o peer AIOS (Fase 1D + payload + retry). HMAC + timeout + backoff."""
 
+import asyncio
 import json
 import uuid
 
@@ -9,6 +10,8 @@ from app.core.config import settings
 from .auth import sign_request
 
 PATH_PREFIX = "/api/integrations/arvo/v1"
+_TIMEOUT = 5.0
+_RETRIES = 3
 
 
 def _headers(method: str, path: str, body: bytes | None = None) -> dict[str, str]:
@@ -17,13 +20,32 @@ def _headers(method: str, path: str, body: bytes | None = None) -> dict[str, str
     )
 
 
+async def _request_with_retry(method: str, path: str, **kw) -> httpx.Response:
+    if not settings.aios_base_url:
+        raise RuntimeError("AIOS integration not configured (aios_base_url)")
+    last_exc: Exception | None = None
+    for attempt in range(_RETRIES):
+        try:
+            async with httpx.AsyncClient(base_url=settings.aios_base_url, timeout=_TIMEOUT) as c:
+                r = await c.request(method, path, **kw)
+                if r.status_code >= 500 or r.status_code == 429:
+                    raise httpx.HTTPStatusError(f"retryable {r.status_code}", request=r.request, response=r)
+                return r
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+            last_exc = e
+            if attempt < _RETRIES - 1:
+                await asyncio.sleep(0.5 * (2**attempt))
+                continue
+            raise
+    raise last_exc  # type: ignore
+
+
 async def ping() -> dict:
-    """GET /health do peer. Usa http:// pois https 503 conhecido nos hosts sslip (GAPS §6)."""
+    """GET /health do peer. Usa http:// pois sslip https 503 (GAPS §6). Retry 3×."""
     path = f"{PATH_PREFIX}/health"
-    async with httpx.AsyncClient(base_url=settings.aios_base_url) as c:
-        r = await c.get(path, headers=_headers("GET", path))
-        r.raise_for_status()
-        return r.json()
+    r = await _request_with_retry("GET", path, headers=_headers("GET", path))
+    r.raise_for_status()
+    return r.json()
 
 
 async def send_event(event_type: str, payload: dict, idempotency_key: str | None = None) -> dict:
@@ -33,7 +55,6 @@ async def send_event(event_type: str, payload: dict, idempotency_key: str | None
     headers = _headers("POST", path, body)
     headers["Idempotency-Key"] = idempotency_key or str(uuid.uuid4())
     headers["Content-Type"] = "application/json"
-    async with httpx.AsyncClient(base_url=settings.aios_base_url) as c:
-        r = await c.post(path, content=body, headers=headers)
-        r.raise_for_status()
-        return r.json()
+    r = await _request_with_retry("POST", path, content=body, headers=headers)
+    r.raise_for_status()
+    return r.json()
