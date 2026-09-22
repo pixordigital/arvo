@@ -71,3 +71,38 @@ def test_health_requires_auth_when_enabled():
         settings.aios_service_key_id = orig_id
         settings.aios_service_key = orig_key
         _clear_nonces()
+
+
+def test_events_idempotency():
+    import json
+    from fastapi.testclient import TestClient
+    from app.core.config import settings
+    from app.integrations.aios.routes import _clear_events
+    from app.main import app
+
+    c = TestClient(app)
+    orig_enabled, orig_id, orig_key = settings.aios_integration_enabled, settings.aios_service_key_id, settings.aios_service_key
+    try:
+        settings.aios_integration_enabled = True
+        settings.aios_service_key_id = "kid-1"
+        settings.aios_service_key = "secret-1"
+        _clear_nonces()
+        _clear_events()
+        path = "/api/v1/integrations/aios/v1/events"
+        body = json.dumps({"type": "test.event", "payload": {"a": 1}}, separators=(",", ":")).encode()
+        hdr = sign_request("POST", path, body, "kid-1", "secret-1")
+        hdr["Idempotency-Key"] = "idem-1"
+        hdr["Content-Type"] = "application/json"
+        r = c.post(path, content=body, headers=hdr)
+        assert r.status_code == 200 and r.json()["deduplicated"] is False
+        hdr2 = sign_request("POST", path, body, "kid-1", "secret-1")
+        hdr2["Idempotency-Key"] = "idem-1"
+        hdr2["Content-Type"] = "application/json"
+        r2 = c.post(path, content=body, headers=hdr2)
+        assert r2.json()["deduplicated"] is True
+    finally:
+        settings.aios_integration_enabled = orig_enabled
+        settings.aios_service_key_id = orig_id
+        settings.aios_service_key = orig_key
+        _clear_nonces()
+        _clear_events()
