@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     gmail_client_secret: str = ""
     outlook_client_id: str = ""
     outlook_client_secret: str = ""
+    # ARVO ↔ AIOS integration (Fase 1A — feature-flag off por padrão)
+    aios_integration_enabled: bool = False
+    aios_base_url: str = ""
+    aios_service_key_id: str = ""
+    aios_service_key: str = ""
 
 
 settings = Settings()

@@ -26,6 +26,8 @@ api_router.include_router(audit_router)
 api_router.include_router(integ_router)
 api_router.include_router(actions_router, prefix="")
 api_router.include_router(gdpr_router)
+from app.integrations.aios.routes import router as aios_router
+api_router.include_router(aios_router)
 
 # Placeholder routers — filled in later phases
 # from app.api import organizations, accounts, opportunities, findings, evidence, recommendations, actions, ledger, integrations, copilot, deal_audit
