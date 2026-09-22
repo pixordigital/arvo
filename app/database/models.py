@@ -281,3 +281,25 @@ CAPABILITIES = {
 
 def has_capability(role: str, cap: str) -> bool:
     return role in CAPABILITIES.get(cap, [])
+
+
+# ── AIOS ↔ ARVO integration — Fase 1-persist (DB nonce + idempotency) ──
+
+
+class IntegrationNonce(Base):
+    __tablename__ = "integration_nonces"
+    nonce: Mapped[str] = mapped_column(String(64), primary_key=True)
+    peer: Mapped[str] = mapped_column(String(20), default="aios")
+    expires_at: Mapped[datetime] = mapped_column(index=True)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+
+class IntegrationEvent(Base):
+    __tablename__ = "integration_events"
+    idempotency_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    peer: Mapped[str] = mapped_column(String(20), default="aios")
+    type: Mapped[str] = mapped_column(String(64), default="")
+    payload: Mapped[dict] = mapped_column(SA_JSON, default=dict)
+    response: Mapped[dict] = mapped_column(SA_JSON, default=dict)
+    expires_at: Mapped[datetime] = mapped_column(index=True)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
