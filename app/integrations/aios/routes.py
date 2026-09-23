@@ -80,6 +80,16 @@ class AiosEvent(BaseModel):
     type: str = Field(..., max_length=64, pattern=r"^[a-z0-9_.-]+$")
     payload: dict = Field(default_factory=dict)
     occurred_at: str | None = None
+    business_trace_id: str | None = Field(default=None, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    event_version: str | None = Field(default="1", max_length=16)
+
+
+class AgentExecutionRequest(BaseModel):
+    finding_id: str | None = None
+    opportunity_id: str | None = None
+    action: str | None = None
+    payload: dict = Field(default_factory=dict)
+    business_trace_id: str | None = Field(default=None, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
 
 
 def _get_idempotent(key: str) -> dict | None:
@@ -137,6 +147,79 @@ async def health_probe():
     return await health()
 
 
+@router.post("/agent-executions", dependencies=[Depends(_require_auth)])
+async def create_agent_execution(body: AgentExecutionRequest):
+    """Phase 2 — ARVO → AIOS handoff. Minimal persist in integration_events."""
+    import uuid
+
+    exec_id = str(uuid.uuid4())
+    trace_id = body.business_trace_id or body.payload.get("business_trace_id")
+    payload = {"finding_id": body.finding_id, "opportunity_id": body.opportunity_id, "action": body.action, "payload": body.payload, "business_trace_id": trace_id}
+    # persist as integration_event for GET
+    try:
+        from app.database.engine import get_sessionmaker
+        from app.database.models import IntegrationEvent
+
+        expires = datetime.now(timezone.utc) + timedelta(seconds=_EVENTS_TTL)
+        async with get_sessionmaker()() as s:
+            s.add(IntegrationEvent(idempotency_key=exec_id, peer="aios", type="agent.execution", payload=payload, response={"id": exec_id, "status": "queued", "business_trace_id": trace_id}, expires_at=expires))
+            await s.commit()
+            _store_idempotent(exec_id, {"id": exec_id, "status": "queued", "business_trace_id": trace_id})
+    except Exception as e:
+        logger.debug("agent-execution DB fallback: %s", e)
+    return {"id": exec_id, "status": "queued", "business_trace_id": trace_id, "event_version": "1"}
+
+
+@router.get("/executions/{exec_id}", dependencies=[Depends(_require_auth)])
+async def get_execution(exec_id: str):
+    cached = _get_idempotent(exec_id)
+    if cached is not None:
+        return cached
+    db_cached = await _db_get_event(exec_id)
+    if db_cached is not None:
+        _store_idempotent(exec_id, db_cached)
+        return db_cached
+    # also try direct IntegrationEvent lookup
+    try:
+        from app.database.engine import get_sessionmaker
+        from app.database.models import IntegrationEvent
+
+        async with get_sessionmaker()() as s:
+            obj = await s.get(IntegrationEvent, exec_id)
+            if obj:
+                return obj.response
+    except Exception as e:
+        logger.debug("get_execution fallback: %s", e)
+    raise HTTPException(404, "Execution not found")
+
+
+async def _handle_agent_action_completed(payload: dict, trace_id: str | None) -> dict:
+    """Phase 4 slice: agent.action.completed → associa evidence ao finding, recalcula mínimo."""
+    finding_id = payload.get("finding_id") or payload.get("opportunity_id") or payload.get("id")
+    if not finding_id:
+        return {"handled": False, "reason": "no finding_id"}
+    try:
+        from app.database.engine import get_sessionmaker
+        from app.database.models import Finding, FindingEvidence
+
+        async with get_sessionmaker()() as s:
+            finding = await s.get(Finding, str(finding_id))
+            if not finding:
+                return {"handled": False, "reason": "finding not found"}
+            # Phase 5: persist trace in provenance
+            if trace_id and isinstance(finding.provenance, dict):
+                prov = dict(finding.provenance)
+                prov["business_trace_id"] = trace_id
+                finding.provenance = prov
+            ev = FindingEvidence(finding_id=finding.id, kind="EVIDENCE", content={"business_trace_id": trace_id, "payload": payload, "source": "agent.action.completed"})
+            s.add(ev)
+            await s.commit()
+            return {"handled": "agent.action.completed", "finding_id": str(finding_id), "business_trace_id": trace_id, "evidence_id": ev.id}
+    except Exception as e:
+        logger.debug("agent.action.completed fallback: %s", e)
+        return {"handled": False, "error": str(e)}
+
+
 @router.post("/events", dependencies=[Depends(_require_auth)])
 async def ingest_event(
     body: AiosEvent,
@@ -151,8 +234,12 @@ async def ingest_event(
     if db_cached is not None:
         _store_idempotent(idempotency_key, db_cached)
         return {**db_cached, "deduplicated": True}
-    resp = {"status": "processed", "idempotency_key": idempotency_key, "type": body.type, "deduplicated": False}
+    trace_id = body.business_trace_id or body.payload.get("business_trace_id")
+    extra_resp: dict = {}
+    if body.type == "agent.action.completed":
+        extra_resp = await _handle_agent_action_completed(body.payload, trace_id)
+    resp = {"status": "processed", "idempotency_key": idempotency_key, "type": body.type, "business_trace_id": trace_id, "event_version": body.event_version or "1", "deduplicated": False, **extra_resp}
     stripped = {k: v for k, v in resp.items() if k != "deduplicated"}
     _store_idempotent(idempotency_key, stripped)
-    await _db_store_event(idempotency_key, body.type, body.payload, stripped)
+    await _db_store_event(idempotency_key, body.type, {**body.payload, "business_trace_id": trace_id} if trace_id else body.payload, stripped)
     return resp
