@@ -26,13 +26,38 @@ async def audit_job(ctx, opp_id: str, org_id: str, prompt_version: str = "v1"):
         await s.commit()
         return result
 
+def _redis_settings() -> RedisSettings:
+    """SASL: merge redis_url + redis_username/password se URL sem credenciais. Normaliza user '' → None."""
+    url = settings.redis_url or "redis://localhost:6379/0"
+    # se password separado e URL sem senha, injeta
+    if settings.redis_password and "@" not in url.split("://", 1)[-1].split("/")[0]:
+        from urllib.parse import urlparse, urlunparse
+        p = urlparse(url)
+        user = settings.redis_username or p.username or ""
+        # monta netloc com SASL
+        auth = ""
+        if user and settings.redis_password:
+            auth = f"{user}:{settings.redis_password}@"
+        elif settings.redis_password:
+            auth = f":{settings.redis_password}@"
+        elif user:
+            auth = f"{user}@"
+        netloc = f"{auth}{p.hostname or 'localhost'}:{p.port or 6379}"
+        url = urlunparse((p.scheme, netloc, p.path or "/0", "", "", ""))
+    s = RedisSettings.from_dsn(url)
+    # ponytail: '' → None (AUTH default user usa só password, não user='')
+    if s.username == "":
+        s.username = None
+    return s
+
+
 class WorkerSettings:
-    redis_settings = RedisSettings.from_dsn(settings.redis_url) if settings.redis_url else RedisSettings()
+    redis_settings = _redis_settings()
     functions = [audit_job]
 
 async def enqueue_audit(opp_id: str, org_id: str, prompt_version: str = "v1"):
     try:
-        pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        pool = await create_pool(_redis_settings())
         job = await pool.enqueue_job("audit_job", opp_id, org_id, prompt_version)
         await pool.close()
         return job.job_id if job else None

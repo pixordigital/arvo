@@ -17,8 +17,10 @@ class Settings(BaseSettings):
     supabase_service_key: str = ""
     supabase_studio_url: str = "http://178.105.181.38:9771"
 
-    # Redis / Workers
+    # Redis / Workers — SASL (user:pass) via redis://user:pass@host:6379/0 ou rediss://
     redis_url: str = "redis://redis:6379/0"
+    redis_username: str = ""  # SASL username (ex: "default" ou "arvo")
+    redis_password: str = ""  # SASL password (requirepass)
 
     # LLM — OpenRouter default per user choice
     llm_provider: str = "openrouter"  # openrouter | openai | anthropic | gemini

@@ -4,18 +4,30 @@ services:
     ports:
       - "9777:9777"
     env_file: .env
+    environment:
+      ARVO_REDIS_URL: "redis://:${ARVO_REDIS_PASSWORD:-changeme}@redis:6379/0"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${ARVO_REDIS_PASSWORD:-changeme}", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${ARVO_REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   worker:
     build: .
     command: ["python", "-m", "app.workers.runner"]
     env_file: .env
+    environment:
+      ARVO_REDIS_URL: "redis://:${ARVO_REDIS_PASSWORD:-changeme}@redis:6379/0"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
