@@ -216,6 +216,22 @@ def test_list_endpoints_paginate_stably(client):
     assert f"NoEvidence {tag}" not in ev.text
 
 
+def test_evidence_page_counts_findings_with_pack_only(client):
+    tok, _, email = _register(client, "pack")
+    h = {"Authorization": f"Bearer {tok}"}
+    import uuid
+
+    tag = uuid.uuid4().hex[:6]
+    r = client.post("/api/v1/findings", json={
+        "title": f"PackOnly {tag}", "exposure_amount": "5",
+        "evidence_pack": {"source": "audit", "trace": tag}}, headers=h)
+    assert r.status_code == 200, r.text
+    assert client.post("/login", data={"email": email, "password": "secret123"}).status_code == 302
+    body = client.get("/evidence?limit=10&offset=0").text
+    assert f"PackOnly {tag}" in body
+    assert "1 de 1" in body
+
+
 def test_web_evidence_rejects_bad_paging(client):
     tok, _, email = _register(client, "evbad")
     assert client.post("/login", data={"email": email, "password": "secret123"}).status_code == 302

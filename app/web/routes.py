@@ -756,7 +756,7 @@ async def actions(request: Request):
 
 @router.get("/evidence", response_class=HTMLResponse)
 async def evidence(request: Request):
-    from sqlalchemy import func, select
+    from sqlalchemy import String, cast, func, select
 
     from app.database.engine import get_sessionmaker
     from app.database.models import Finding, FindingEvidence
@@ -768,9 +768,11 @@ async def evidence(request: Request):
     except ValueError:
         raise HTTPException(400, "limit/offset must be integers")
     async with get_sessionmaker()() as s:
-        has_evidence = (
-            (Finding.evidence_pack != {})
-            | select(FindingEvidence.id)
+        # JSON equality is not supported by Postgres json; compare as text.
+        pack_text = cast(Finding.evidence_pack, String)
+        has_pack = func.coalesce(func.length(pack_text), 0) > 2
+        has_evidence = has_pack | (
+            select(FindingEvidence.id)
             .where(FindingEvidence.finding_id == Finding.id)
             .exists()
         )
