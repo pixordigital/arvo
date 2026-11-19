@@ -5,7 +5,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.database.engine import get_sessionmaker
 from app.database.models import OPP_STAGES, Opportunity, Account
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, pagination
 from app.services.financial import D, money
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
@@ -53,9 +53,14 @@ class OppIn(BaseModel):
         return v
 
 @router.get("")
-async def list_opps(ctx=Depends(get_current_user)):
+async def list_opps(page=Depends(pagination), ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
-        rows = (await s.execute(select(Opportunity).where(Opportunity.org_id==ctx["membership"].org_id).order_by(Opportunity.created_at.desc()))).scalars().all()
+        rows = (await s.execute(
+            select(Opportunity)
+            .where(Opportunity.org_id==ctx["membership"].org_id)
+            .order_by(Opportunity.created_at.desc(), Opportunity.id.desc())
+            .offset(page["offset"]).limit(page["limit"])
+        )).scalars().all()
         return [{"id":r.id,"name":r.name,"stage":r.stage,"amount":r.amount,"account_id":r.account_id} for r in rows]
 
 @router.post("")

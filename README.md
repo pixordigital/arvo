@@ -42,7 +42,7 @@ Principio verdade: limites só de `app/core/config.py:PLANS` + `app/core/limits.
 
 ## Limites conhecidos (implementação atual)
 
-- Listagens de API retornam os registros mais recentes (limite de 50; export LGPD completo). Paginação ainda não implementada.
-- Rate limit de login/cadastro é em memória por processo: com múltiplos workers (gunicorn `--workers 2`) o limite efetivo é por worker. Para limite global, usar Redis.
+- Listagens de API aceitam `limit` (1–200, padrão 50) e `offset`, com ordem estável (`created_at`, `id`). A página `/evidence` aceita os mesmos parâmetros.
+- Rate limit de login/cadastro usa Redis (`INCR` + `EXPIRE`, chave por IP+rota) quando acessível; se o Redis cair, cai para contador em memória por processo.
 - Adaptadores CRM/e-mail respondem 501 (não implementados); entrada real hoje é CSV e upload.
 - Execução de action registra a transição de estado; nenhuma integração externa é chamada.

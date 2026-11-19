@@ -150,6 +150,83 @@ async def test_action_execute_requires_capability():
     assert denied.status_code == 403, denied.text
 
 
+def test_list_endpoints_paginate_stably(client):
+    import uuid
+
+    tok, _, email = _register(client, "page")
+    h = {"Authorization": f"Bearer {tok}"}
+    tag = uuid.uuid4().hex[:6]
+    for i in range(5):
+        assert client.post("/api/v1/findings", json={
+            "title": f"Page {tag} {i}", "exposure_amount": "1"}, headers=h).status_code == 200
+    acc = client.post("/api/v1/accounts", json={"name": f"PageCo {tag}"}, headers=h).json()
+    assert client.post("/api/v1/accounts", json={"name": f"PageCo2 {tag}"}, headers=h).status_code == 200
+    for i in range(5):
+        assert client.post("/api/v1/opportunities", json={
+            "account_id": acc["id"], "name": f"PageDeal {tag} {i}", "amount": "1"}, headers=h).status_code == 200
+
+    f1 = client.get("/api/v1/findings?limit=2&offset=0", headers=h).json()
+    f2 = client.get("/api/v1/findings?limit=2&offset=2", headers=h).json()
+    assert len(f1) == 2 and len(f2) == 2
+    assert {f["id"] for f in f1}.isdisjoint({f["id"] for f in f2})
+    again = client.get("/api/v1/findings?limit=2&offset=0", headers=h).json()
+    assert [f["id"] for f in again] == [f["id"] for f in f1]
+
+    a1 = client.get("/api/v1/accounts?limit=1&offset=0", headers=h).json()
+    a2 = client.get("/api/v1/accounts?limit=1&offset=1", headers=h).json()
+    assert len(a1) == 1 and len(a2) == 1 and a1[0]["id"] != a2[0]["id"]
+
+    o1 = client.get("/api/v1/opportunities?limit=2&offset=0", headers=h).json()
+    o2 = client.get("/api/v1/opportunities?limit=2&offset=2", headers=h).json()
+    assert len(o1) == 2 and len(o2) == 2
+    assert {o["id"] for o in o1}.isdisjoint({o["id"] for o in o2})
+
+    assert client.get("/api/v1/findings?limit=0", headers=h).status_code == 422
+    assert client.get("/api/v1/findings?limit=999", headers=h).status_code == 422
+    assert client.get("/api/v1/findings?offset=-1", headers=h).status_code == 422
+
+    # actions and evidence page honour limit/offset
+    assert client.post("/api/v1/actions", json={"finding_id": f1[0]["id"]}, headers=h).status_code == 200
+    acts = client.get("/api/v1/actions?limit=1&offset=0", headers=h).json()
+    assert len(acts) == 1
+    assert client.post("/login", data={"email": email, "password": "secret123"}).status_code == 302
+    ev = client.get("/evidence?limit=2&offset=0")
+    assert ev.status_code == 200 and "Próxima" in ev.text and "offset=2" in ev.text
+
+
+def test_web_evidence_rejects_bad_paging(client):
+    tok, _, email = _register(client, "evbad")
+    assert client.post("/login", data={"email": email, "password": "secret123"}).status_code == 302
+    assert client.get("/evidence?limit=abc").status_code == 400
+
+
+async def test_rate_limit_uses_redis_when_available(monkeypatch):
+    import app.main as main_mod
+
+    class FakeRedis:
+        def __init__(self):
+            self.counts = {}
+            self.expires = {}
+
+        async def incr(self, key):
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return self.counts[key]
+
+        async def expire(self, key, window):
+            self.expires[key] = window
+
+    fake = FakeRedis()
+
+    async def _fake_client():
+        return fake
+
+    monkeypatch.setattr(main_mod, "_redis_client", _fake_client)
+    n1 = await main_mod._hit_count("k", 60)
+    n2 = await main_mod._hit_count("k", 60)
+    assert (n1, n2) == (1, 2)
+    assert fake.expires["k"] == 60
+
+
 def test_gdpr_export_complete_and_delete_audited(client):
     tok, _, _ = _register(client, "gdpr")
     h = {"Authorization": f"Bearer {tok}"}
@@ -203,10 +280,12 @@ def test_deal_audit_job_fails_honestly_without_llm(client):
 
 def test_auth_rate_limit_and_cross_origin_rejection(client):
     from app.core.config import settings
-    from app.main import _RATE
+    import app.main as main_mod
 
     old = settings.rate_limit_per_minute
-    _RATE.clear()
+    main_mod._RATE.clear()
+    old_redis = main_mod._REDIS
+    main_mod._REDIS = False
     try:
         settings.rate_limit_per_minute = 2
         payload = {"email": "nobody@arvo.test", "password": "wrong"}
@@ -215,7 +294,8 @@ def test_auth_rate_limit_and_cross_origin_rejection(client):
         assert client.post("/api/v1/auth/login", json=payload).status_code == 429
     finally:
         settings.rate_limit_per_minute = old
-        _RATE.clear()
+        main_mod._RATE.clear()
+        main_mod._REDIS = old_redis
 
     blocked = client.post("/api/v1/accounts", json={"name": "x"}, headers={"Origin": "https://evil.example"})
     assert blocked.status_code == 403

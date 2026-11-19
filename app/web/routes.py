@@ -756,19 +756,30 @@ async def actions(request: Request):
 
 @router.get("/evidence", response_class=HTMLResponse)
 async def evidence(request: Request):
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     from app.database.engine import get_sessionmaker
     from app.database.models import Finding, FindingEvidence
 
     auth = await _require_org(request)
+    try:
+        limit = min(max(int(request.query_params.get("limit", 20)), 1), 100)
+        offset = max(int(request.query_params.get("offset", 0)), 0)
+    except ValueError:
+        raise HTTPException(400, "limit/offset must be integers")
     async with get_sessionmaker()() as s:
+        total = (
+            await s.execute(
+                select(func.count(Finding.id)).where(Finding.org_id == auth["org_id"])
+            )
+        ).scalar() or 0
         packs = (
             await s.execute(
                 select(Finding)
                 .where(Finding.org_id == auth["org_id"])
-                .order_by(Finding.created_at.desc())
-                .limit(20)
+                .order_by(Finding.created_at.desc(), Finding.id.desc())
+                .offset(offset)
+                .limit(limit)
             )
         ).scalars().all()
         packs = [
@@ -788,8 +799,9 @@ async def evidence(request: Request):
                 select(FindingEvidence)
                 .join(Finding, FindingEvidence.finding_id == Finding.id)
                 .where(Finding.org_id == auth["org_id"])
-                .order_by(FindingEvidence.created_at.desc())
-                .limit(20)
+                .order_by(FindingEvidence.created_at.desc(), FindingEvidence.id.desc())
+                .offset(offset)
+                .limit(limit)
             )
         ).scalars().all()
         evidences = [
@@ -799,7 +811,21 @@ async def evidence(request: Request):
     return templates.TemplateResponse(
         request,
         "pages/evidence.html",
-        _ctx("Evidence", "evidence", {"evidences": evidences, "packs": packs}, request),
+        _ctx(
+            "Evidence",
+            "evidence",
+            {
+                "evidences": evidences,
+                "packs": packs,
+                "limit": limit,
+                "offset": offset,
+                "total": total,
+                "prev_offset": max(offset - limit, 0),
+                "next_offset": offset + limit,
+                "has_next": offset + limit < total,
+            },
+            request,
+        ),
     )
 
 

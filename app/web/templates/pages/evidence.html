@@ -8,7 +8,7 @@
 <section>
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
     <div class="lg:col-span-2">
-      <h2 class="card-title mb-3">Findings com packs <span class="t-muted font-mono text-xs">· últimos 20</span></h2>
+      <h2 class="card-title mb-3">Findings com packs <span class="t-muted font-mono text-xs">· {{ packs|length }} de {{ total }}</span></h2>
       <div class="table-wrap elev-1">
         <table class="table table-mobile-card table-sticky table-zebra">
           <thead><tr><th>ID</th><th>Título</th><th>Tipo</th><th>Status</th><th class="num">Exposição</th></tr></thead>
@@ -27,7 +27,7 @@
       </div>
     </div>
     <div>
-      <h2 class="card-title mb-3">Evidências <span class="t-muted font-mono text-xs">· últimas 20</span></h2>
+      <h2 class="card-title mb-3">Evidências <span class="t-muted font-mono text-xs">· página atual</span></h2>
       <div class="table-wrap elev-1">
         <table class="table table-mobile-card table-zebra">
           <thead><tr><th>ID</th><th>Kind</th><th>Finding</th></tr></thead>
@@ -43,6 +43,10 @@
         </table>
       </div>
     </div>
+  </div>
+  <div class="flex gap-3 mt-4">
+    {% if offset > 0 %}<a class="btn btn-secondary btn-sm" href="/evidence?limit={{ limit }}&offset={{ prev_offset }}">← Anterior</a>{% endif %}
+    {% if has_next %}<a class="btn btn-secondary btn-sm" href="/evidence?limit={{ limit }}&offset={{ next_offset }}">Próxima →</a>{% endif %}
   </div>
 </section>
 {% endblock %}

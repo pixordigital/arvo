@@ -61,6 +61,7 @@ app.add_middleware(
 )
 
 _RATE: dict[str, list[float]] = {}
+_REDIS = None
 
 
 def _client_ip(request: Request) -> str:
@@ -68,10 +69,50 @@ def _client_ip(request: Request) -> str:
     return (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown"))
 
 
+async def _redis_client():
+    """Lazy Redis client. None means Redis unusable — fall back to in-process counters."""
+    global _REDIS
+    if _REDIS is None:
+        try:
+            from redis.asyncio import from_url
+
+            client = from_url(
+                settings.redis_url,
+                socket_connect_timeout=0.5,
+                socket_timeout=0.5,
+                decode_responses=True,
+            )
+            await client.ping()
+            _REDIS = client
+        except Exception as e:
+            logger.warning("Rate limit: Redis unavailable, using per-process counters (%s)", e)
+            _REDIS = False
+    return _REDIS or None
+
+
+async def _hit_count(key: str, window: int) -> int:
+    """Increment a 60s hit counter. Redis keeps it global across workers when reachable."""
+    client = await _redis_client()
+    if client is not None:
+        try:
+            n = await client.incr(key)
+            if n == 1:
+                await client.expire(key, window)
+            return int(n)
+        except Exception as e:
+            logger.warning("Rate limit: Redis increment failed, using memory (%s)", e)
+    import time as _time
+
+    now = _time.time()
+    hits = [t for t in _RATE.get(key, []) if now - t < window]
+    hits.append(now)
+    _RATE[key] = hits
+    return len(hits)
+
+
 @app.middleware("http")
 async def abuse_guard(request: Request, call_next):
     """Rate-limit auth writes and reject cross-origin state changes (CSRF defence)."""
-    import time as _time
 
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         origin = request.headers.get("origin")
@@ -83,17 +124,13 @@ async def abuse_guard(request: Request, call_next):
 
         auth_write = request.url.path.startswith("/api/v1/auth/") or request.url.path in ("/login", "/register")
         if auth_write:
-            now = _time.time()
-            key = f"{_client_ip(request)}:{request.url.path}"
-            hits = [t for t in _RATE.get(key, []) if now - t < 60]
-            if len(hits) >= settings.rate_limit_per_minute:
+            key = f"arvo:ratelimit:{_client_ip(request)}:{request.url.path}"
+            if await _hit_count(key, 60) > settings.rate_limit_per_minute:
                 return JSONResponse(
                     status_code=429,
                     content={"detail": "Too many requests; retry in a minute"},
                     headers={"Retry-After": "60"},
                 )
-            hits.append(now)
-            _RATE[key] = hits
     return await call_next(request)
 
 

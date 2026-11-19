@@ -1,9 +1,19 @@
 """ARVO — FastAPI deps: current_user + org + RLS injection."""
 
-from fastapi import Request, Depends, HTTPException
+from fastapi import Request, Depends, HTTPException, Query
 from sqlalchemy import select
 from app.database.engine import get_sessionmaker
 from app.core.security import decode_token
+
+MAX_PAGE_SIZE = 200
+
+
+def pagination(
+    limit: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """Shared limit/offset params for list endpoints."""
+    return {"limit": limit, "offset": offset}
 
 async def get_current_user(request: Request):
     tok = None

@@ -5,7 +5,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.database.engine import get_sessionmaker
 from app.database.models import CONTACT_ROLES, Account, Contact
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, pagination
 from app.core.limits import check_org_limits
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -67,9 +67,14 @@ class ContactIn(BaseModel):
         return v
 
 @router.get("")
-async def list_accounts(ctx=Depends(get_current_user)):
+async def list_accounts(page=Depends(pagination), ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
-        rows = (await s.execute(select(Account).where(Account.org_id==ctx["membership"].org_id).order_by(Account.created_at.desc()))).scalars().all()
+        rows = (await s.execute(
+            select(Account)
+            .where(Account.org_id==ctx["membership"].org_id)
+            .order_by(Account.created_at.desc(), Account.id.desc())
+            .offset(page["offset"]).limit(page["limit"])
+        )).scalars().all()
         return [{"id":r.id,"name":r.name,"domain":r.domain,"type":r.type} for r in rows]
 
 @router.post("")

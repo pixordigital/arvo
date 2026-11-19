@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.database.engine import get_sessionmaker
 from app.database.models import Product, Proposal, ProposalItem, Invoice, FinancialEvent, FinancialLedger, Finding, FindingEvidence
 from app.services.financial import D, calc_discount_exposure, calc_proposal_total, idempotency_key, money
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, pagination
 from app.core.limits import check_org_limits
 
 router = APIRouter(tags=["financial"])
@@ -114,21 +114,36 @@ async def create_proposal(inp: ProposalIn, ctx=Depends(get_current_user)):
         return {"id":prop.id,"gross":gross,"net":net,"exposure":exp}
 
 @router.get("/proposals")
-async def list_proposals(ctx=Depends(get_current_user)):
+async def list_proposals(page=Depends(pagination), ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
-        rows=(await s.execute(select(Proposal).where(Proposal.org_id==ctx["membership"].org_id).order_by(Proposal.created_at.desc()))).scalars().all()
+        rows=(await s.execute(
+            select(Proposal)
+            .where(Proposal.org_id==ctx["membership"].org_id)
+            .order_by(Proposal.created_at.desc(), Proposal.id.desc())
+            .offset(page["offset"]).limit(page["limit"])
+        )).scalars().all()
         return [{"id":r.id,"total_amount":r.total_amount,"currency":r.currency,"status":r.status} for r in rows]
 
 @router.get("/ledger")
-async def list_ledger(ctx=Depends(get_current_user)):
+async def list_ledger(page=Depends(pagination), ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
-        rows=(await s.execute(select(FinancialLedger).where(FinancialLedger.org_id==ctx["membership"].org_id).order_by(FinancialLedger.created_at.desc()).limit(50))).scalars().all()
+        rows=(await s.execute(
+            select(FinancialLedger)
+            .where(FinancialLedger.org_id==ctx["membership"].org_id)
+            .order_by(FinancialLedger.created_at.desc(), FinancialLedger.id.desc())
+            .offset(page["offset"]).limit(page["limit"])
+        )).scalars().all()
         return [{"id":r.id,"entry_type":r.entry_type,"amount":r.amount,"description":r.description} for r in rows]
 
 @router.get("/findings")
-async def list_findings(ctx=Depends(get_current_user)):
+async def list_findings(page=Depends(pagination), ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
-        rows=(await s.execute(select(Finding).where(Finding.org_id==ctx["membership"].org_id).order_by(Finding.created_at.desc()).limit(50))).scalars().all()
+        rows=(await s.execute(
+            select(Finding)
+            .where(Finding.org_id==ctx["membership"].org_id)
+            .order_by(Finding.created_at.desc(), Finding.id.desc())
+            .offset(page["offset"]).limit(page["limit"])
+        )).scalars().all()
         return [{"id":r.id,"kind":r.kind,"status":r.status,"title":r.title,"exposure_amount":r.exposure_amount} for r in rows]
 
 class FindingIn(BaseModel):

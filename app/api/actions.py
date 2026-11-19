@@ -6,7 +6,7 @@ from sqlalchemy import select, func
 from app.database.engine import get_sessionmaker
 from app.database.models import Finding, FindingEvidence, Recommendation, Action, FinancialLedger, FinancialEvent
 from app.services.financial import D, idempotency_key, money
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, pagination
 
 router = APIRouter(tags=["actions"])
 
@@ -21,9 +21,14 @@ async def create_rec(data: dict, ctx=Depends(get_current_user)):
         return {"id": r.id, "finding_id": fid}
 
 @router.get("/recommendations")
-async def list_recs(ctx=Depends(get_current_user)):
+async def list_recs(page=Depends(pagination), ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
-        rows=(await s.execute(select(Recommendation).where(Recommendation.org_id==ctx["membership"].org_id).order_by(Recommendation.created_at.desc()))).scalars().all()
+        rows=(await s.execute(
+            select(Recommendation)
+            .where(Recommendation.org_id==ctx["membership"].org_id)
+            .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
+            .offset(page["offset"]).limit(page["limit"])
+        )).scalars().all()
         return [{"id":r.id,"finding_id":r.finding_id,"title":r.title,"priority":r.priority,"status":r.status} for r in rows]
 
 @router.post("/actions")
@@ -93,9 +98,14 @@ async def verify_action(aid: str, data: dict, ctx=Depends(get_current_user)):
         return {"id": a.id, "status": a.status, "verified_amount": verified}
 
 @router.get("/actions")
-async def list_actions(ctx=Depends(get_current_user)):
+async def list_actions(page=Depends(pagination), ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
-        rows=(await s.execute(select(Action).where(Action.org_id==ctx["membership"].org_id).order_by(Action.created_at.desc()))).scalars().all()
+        rows=(await s.execute(
+            select(Action)
+            .where(Action.org_id==ctx["membership"].org_id)
+            .order_by(Action.created_at.desc(), Action.id.desc())
+            .offset(page["offset"]).limit(page["limit"])
+        )).scalars().all()
         return [{"id":r.id,"finding_id":r.finding_id,"title":r.title,"status":r.status,"verified_amount":r.verified_amount} for r in rows]
 
 @router.get("/financial-impact")

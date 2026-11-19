@@ -6,7 +6,7 @@ from sqlalchemy import select
 from fastapi import HTTPException
 from app.database.engine import get_sessionmaker
 from app.database.models import RawRecord, Account
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, pagination
 from app.core.limits import check_org_limits
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -47,7 +47,12 @@ async def ingest_upload(file: UploadFile = File(...), ctx=Depends(get_current_us
         return {"raw_id": raw.id, "filename": file.filename, "size": len(data)}
 
 @router.get("/raw")
-async def list_raw(ctx=Depends(get_current_user)):
+async def list_raw(page=Depends(pagination), ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
-        rows = (await s.execute(select(RawRecord).where(RawRecord.org_id==ctx["membership"].org_id).order_by(RawRecord.created_at.desc()).limit(50))).scalars().all()
+        rows = (await s.execute(
+            select(RawRecord)
+            .where(RawRecord.org_id==ctx["membership"].org_id)
+            .order_by(RawRecord.created_at.desc(), RawRecord.id.desc())
+            .offset(page["offset"]).limit(page["limit"])
+        )).scalars().all()
         return [{"id":r.id,"source":r.source,"status":r.status,"source_id":r.source_id} for r in rows]

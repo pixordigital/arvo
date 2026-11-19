@@ -7,7 +7,7 @@ from app.database.engine import get_sessionmaker
 from app.database.models import AiDecision, AiExtraction, DealAuditJob, Finding, Opportunity
 from app.agents.provider import get_provider
 from app.services.deal_audit import audit_deal, parse_ai_risks
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, pagination
 import uuid
 
 router = APIRouter(prefix="/deal-audits", tags=["deal-audits"])
@@ -162,14 +162,14 @@ async def get_audit(job_id: str, ctx=Depends(get_current_user)):
 
 
 @router.get("")
-async def list_audits(ctx=Depends(get_current_user)):
+async def list_audits(page=Depends(pagination), ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
         rows = (
             await s.execute(
                 select(DealAuditJob)
                 .where(DealAuditJob.org_id == ctx["membership"].org_id)
-                .order_by(DealAuditJob.created_at.desc())
-                .limit(50)
+                .order_by(DealAuditJob.created_at.desc(), DealAuditJob.id.desc())
+                .offset(page["offset"]).limit(page["limit"])
             )
         ).scalars().all()
         return [_job_view(r) for r in rows]
