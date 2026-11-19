@@ -159,6 +159,26 @@ def test_list_endpoints_paginate_stably(client):
     for i in range(5):
         assert client.post("/api/v1/findings", json={
             "title": f"Page {tag} {i}", "exposure_amount": "1"}, headers=h).status_code == 200
+    assert client.post("/api/v1/findings", json={
+        "title": f"NoEvidence {tag}", "exposure_amount": "1"}, headers=h).status_code == 200
+
+    import asyncio
+
+    from sqlalchemy import select
+
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Finding, FindingEvidence
+
+    async def _seed_evidence():
+        async with get_sessionmaker()() as s:
+            rows = (
+                await s.execute(select(Finding).where(Finding.title.like(f"Page {tag}%")))
+            ).scalars().all()
+            for row in rows:
+                s.add(FindingEvidence(finding_id=row.id, kind="SOURCE", content={"seed": True}))
+            await s.commit()
+
+    asyncio.run(_seed_evidence())
     acc = client.post("/api/v1/accounts", json={"name": f"PageCo {tag}"}, headers=h).json()
     assert client.post("/api/v1/accounts", json={"name": f"PageCo2 {tag}"}, headers=h).status_code == 200
     for i in range(5):
@@ -192,6 +212,8 @@ def test_list_endpoints_paginate_stably(client):
     assert client.post("/login", data={"email": email, "password": "secret123"}).status_code == 302
     ev = client.get("/evidence?limit=2&offset=0")
     assert ev.status_code == 200 and "Próxima" in ev.text and "offset=2" in ev.text
+    assert "2 de 5" in ev.text
+    assert f"NoEvidence {tag}" not in ev.text
 
 
 def test_web_evidence_rejects_bad_paging(client):

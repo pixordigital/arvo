@@ -27,6 +27,8 @@ services:
   worker:
     build: .
     command: ["python", "-m", "app.workers.runner"]
+    healthcheck:
+      disable: true
     env_file: .env
     environment:
       ARVO_REDIS_URL: "redis://:${ARVO_REDIS_PASSWORD:-changeme}@redis:6379/0"

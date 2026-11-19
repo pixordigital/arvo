@@ -768,15 +768,20 @@ async def evidence(request: Request):
     except ValueError:
         raise HTTPException(400, "limit/offset must be integers")
     async with get_sessionmaker()() as s:
+        has_evidence = (
+            (Finding.evidence_pack != {})
+            | select(FindingEvidence.id)
+            .where(FindingEvidence.finding_id == Finding.id)
+            .exists()
+        )
+        in_scope = (Finding.org_id == auth["org_id"]) & has_evidence
         total = (
-            await s.execute(
-                select(func.count(Finding.id)).where(Finding.org_id == auth["org_id"])
-            )
+            await s.execute(select(func.count(Finding.id)).where(in_scope))
         ).scalar() or 0
         packs = (
             await s.execute(
                 select(Finding)
-                .where(Finding.org_id == auth["org_id"])
+                .where(in_scope)
                 .order_by(Finding.created_at.desc(), Finding.id.desc())
                 .offset(offset)
                 .limit(limit)
