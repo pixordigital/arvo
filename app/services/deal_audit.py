@@ -1,5 +1,6 @@
 """ARVO — DealAuditService + MaterialityService. AI interpreta, Python decide."""
 
+import json
 from decimal import Decimal
 from app.services.financial import D, money
 
@@ -12,6 +13,28 @@ def materiality(amount: str) -> tuple[str, str]:
     if a >= MATERIALITY_THRESHOLDS["MEDIUM"]: return "MEDIUM", "validated_risk"
     if a >= MATERIALITY_THRESHOLDS["LOW"]: return "LOW", "potential_exposure"
     return "LOW", "potential_exposure"
+
+def parse_ai_risks(content: str) -> list[dict]:
+    """Parse LLM JSON into validated risks. Invalid output yields no risks, never invented ones."""
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = text.split("```", 2)[1] if text.count("```") >= 2 else text
+        text = text.removeprefix("json").strip()
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return []
+    raw = data.get("risks", []) if isinstance(data, dict) else []
+    risks = []
+    for r in raw if isinstance(raw, list) else []:
+        if not isinstance(r, dict):
+            continue
+        pct = D(r.get("discount_pct", "0"))
+        if pct <= 0 or pct > 100:
+            continue
+        risks.append({"kind": str(r.get("kind", "DISCOUNT"))[:50], "discount_pct": str(pct), "reason": str(r.get("reason", ""))[:500]})
+    return risks
+
 
 def prioritize(findings: list[dict]) -> list[dict]:
     sev_order = {"CRITICAL":4,"HIGH":3,"MEDIUM":2,"LOW":1}

@@ -7,18 +7,27 @@ from app.database.models import RawRecord, Account, Contact
 from app.integrations.crm.base import ADAPTERS
 from app.services.evidence import build_pack
 from app.api.deps import get_current_user
+from app.core.limits import check_org_limits
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 @router.get("")
 async def list_integrations(ctx=Depends(get_current_user)):
-    return [{"source": k, "adapter": v.source, "status":"stub"} for k,v in ADAPTERS.items()] + [{"source":"csv","status":"ready"},{"source":"upload","status":"ready"}]
+    return [{"source": k, "adapter": v.source, "status": "not_implemented"} for k, v in ADAPTERS.items()] + [
+        {"source": "csv", "status": "ready"},
+        {"source": "upload", "status": "ready"},
+    ]
 
 @router.post("/sync/{source}")
 async def sync_source(source: str, ctx=Depends(get_current_user)):
     ad = ADAPTERS.get(source.lower())
     if not ad: raise HTTPException(404, f"Unknown {source}")
-    raw_list = await ad.fetch({"org_id": ctx["membership"].org_id})
+    try:
+        raw_list = await ad.fetch({"org_id": ctx["membership"].org_id})
+    except NotImplementedError as e:
+        raise HTTPException(501, str(e))
+    ok, err, _ = await check_org_limits(ctx["membership"].org_id, "accounts", delta=len(raw_list))
+    if not ok: raise HTTPException(402, err)
     async with get_sessionmaker()() as s:
         created=0
         for raw in raw_list:

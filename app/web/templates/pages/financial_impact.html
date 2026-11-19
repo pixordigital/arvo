@@ -3,14 +3,14 @@
 <div class="page-head">
   <p class="kicker">Ledger only · {{ today }}</p>
   <h1 class="page-title">Financial impact</h1>
-  <p class="page-sub">Real ledger entries only. Estimates always carry ~ and *.</p>
+  <p class="page-sub">Real ledger entries and finding exposure for this org. Estimates always carry ~ and *.</p>
 </div>
 
 <section aria-label="Totals">
   <div class="stat-grid">
     <div class="card card-content stat-card stat-span-2">
       <div class="stat-top"><span class="stat-cap">Exposure · DEBIT</span><span class="stat-icon red">↓</span></div>
-      <div class="stat-value num t-danger">{{ impact.exposure|brl }}</div>
+      <div class="stat-value num t-danger">{{ impact.debit|brl }}</div>
       <div class="stat-sub">Total em ledger como DEBIT</div>
     </div>
     <div class="card card-content stat-card stat-span-2">
@@ -18,10 +18,10 @@
       <div class="stat-value num t-mint">{{ impact.verified|brl }}</div>
       <div class="stat-sub">Total em ledger como VERIFIED</div>
     </div>
-    <div class="card card-content"><div class="stat-cap mb-2">DEBIT</div><div class="stat-value num t-danger">{{ impact.debit|brl }}</div><div class="stat-sub">Total DEBIT</div></div>
-    <div class="card card-content"><div class="stat-cap mb-2">CREDIT</div><div class="stat-value num">{{ impact.credit|brl if impact.credit else 'R$ 0,00' }}</div><div class="stat-sub">Total CREDIT</div></div>
-    <div class="card card-content"><div class="stat-cap mb-2">Findings exposure</div><div class="stat-value num t-amber">{{ impact.exposure|brl }}</div><div class="stat-sub">{{ impact.count }} findings</div></div>
-    <div class="card card-content"><div class="stat-cap mb-2">Lançamentos</div><div class="stat-value num">{{ impact.count }}</div><div class="stat-sub">No ledger</div></div>
+    <div class="card card-content"><div class="stat-cap mb-2">CREDIT</div><div class="stat-value num">{{ impact.credit|brl }}</div><div class="stat-sub">Total CREDIT</div></div>
+    <div class="card card-content"><div class="stat-cap mb-2">Findings exposure</div><div class="stat-value num t-amber">{{ impact.exposure|brl }}</div><div class="stat-sub">{{ impact.findings }} findings</div></div>
+    <div class="card card-content"><div class="stat-cap mb-2">Lançamentos</div><div class="stat-value num">{{ impact.ledger_count }}</div><div class="stat-sub">No ledger</div></div>
+    <div class="card card-content"><div class="stat-cap mb-2">Verified vs exposure</div><div class="stat-value num">{{ impact.leak_pct_verified }}%</div><div class="stat-sub">provado</div></div>
   </div>
 </section>
 {% endblock %}

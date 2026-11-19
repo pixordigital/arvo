@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime, timezone
 from sqlalchemy import select, func
 from app.database.engine import get_sessionmaker
-from app.database.models import Finding, Recommendation, Action, FinancialLedger, FinancialEvent
-from app.services.financial import idempotency_key
+from app.database.models import Finding, FindingEvidence, Recommendation, Action, FinancialLedger, FinancialEvent
+from app.services.financial import D, idempotency_key, money
 from app.api.deps import get_current_user
 
 router = APIRouter(tags=["actions"])
@@ -52,12 +52,13 @@ async def approve_action(aid: str, ctx=Depends(get_current_user)):
 
 @router.post("/actions/{aid}/execute")
 async def execute_action(aid: str, ctx=Depends(get_current_user)):
+    from app.database.models import has_capability
+    if not has_capability(ctx["membership"].role, "actions:execute"):
+        raise HTTPException(403, "Need execution capability")
     async with get_sessionmaker()() as s:
         a=await s.get(Action, aid)
         if not a or a.org_id!=ctx["membership"].org_id: raise HTTPException(404)
         if a.status!="APPROVED": raise HTTPException(400, f"Need APPROVED, got {a.status}")
-        a.status="EXECUTING"; await s.commit()
-        # simulate execution
         a.status="EXECUTED"; a.executed_at=datetime.now(timezone.utc).replace(tzinfo=None)
         f=await s.get(Finding, a.finding_id)
         if f: f.status="ACTION_EXECUTED"
@@ -66,21 +67,30 @@ async def execute_action(aid: str, ctx=Depends(get_current_user)):
 
 @router.post("/actions/{aid}/verify")
 async def verify_action(aid: str, data: dict, ctx=Depends(get_current_user)):
-    amount=data.get("verified_amount","0")
+    if ctx["membership"].role not in ("OWNER","ADMIN","MANAGER"): raise HTTPException(403, "Need verification capability")
+    amount = D(data.get("verified_amount", "0"))
+    if amount <= 0: raise HTTPException(400, "verified_amount must be > 0")
     async with get_sessionmaker()() as s:
         a=await s.get(Action, aid)
         if not a or a.org_id!=ctx["membership"].org_id: raise HTTPException(404)
         if a.status!="EXECUTED": raise HTTPException(400, f"Need EXECUTED, got {a.status}")
-        a.status="VERIFIED"; a.verified_amount=str(amount)
         f=await s.get(Finding, a.finding_id)
-        if f: f.status="FINANCIALLY_VERIFIED"
+        if not f: raise HTTPException(400, "Action has no finding")
+        ev_count=(await s.execute(select(func.count(FindingEvidence.id)).where(FindingEvidence.finding_id==f.id))).scalar() or 0
+        if ev_count == 0 and not f.evidence_pack:
+            raise HTTPException(400, "Evidence required before financial verification")
+        if amount > D(f.exposure_amount):
+            raise HTTPException(400, f"verified_amount exceeds exposure {f.exposure_amount}")
+        verified = money(amount)
+        a.status="VERIFIED"; a.verified_amount=verified
+        f.status="FINANCIALLY_VERIFIED"
         # ledger VERIFIED credit
-        fe=FinancialEvent(org_id=ctx["membership"].org_id, kind="RECOVERED", amount=str(amount), currency="BRL", idempotency_key=idempotency_key(ctx["membership"].org_id,"verified",aid))
+        fe=FinancialEvent(org_id=ctx["membership"].org_id, kind="RECOVERED", amount=verified, currency="BRL", idempotency_key=idempotency_key(ctx["membership"].org_id,"verified",aid))
         s.add(fe); await s.flush()
-        fl=FinancialLedger(org_id=ctx["membership"].org_id, event_id=fe.id, entry_type="VERIFIED", amount=str(amount), currency="BRL", description=f"Verified action {aid}")
+        fl=FinancialLedger(org_id=ctx["membership"].org_id, event_id=fe.id, entry_type="VERIFIED", amount=verified, currency="BRL", description=f"Verified action {aid}")
         s.add(fl)
         await s.commit()
-        return {"id": a.id, "status": a.status, "verified_amount": amount}
+        return {"id": a.id, "status": a.status, "verified_amount": verified}
 
 @router.get("/actions")
 async def list_actions(ctx=Depends(get_current_user)):
@@ -97,5 +107,5 @@ async def financial_impact(ctx=Depends(get_current_user)):
         ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id==ctx["membership"].org_id, FinancialLedger.entry_type=="VERIFIED"))).scalars().all()
         verified = sum_amounts(ver_vals)
         findings=(await s.execute(select(Finding).where(Finding.org_id==ctx["membership"].org_id))).scalars().all()
-        total_exp=sum(float(f.exposure_amount or 0) for f in findings)
-        return {"exposure_ledger": exposure, "verified": verified, "findings_exposure": f"{total_exp:.2f}", "findings_count": len(findings), "ledger_count": (await s.execute(select(func.count(FinancialLedger.id)).where(FinancialLedger.org_id==ctx["membership"].org_id))).scalar()}
+        total_exp=sum_amounts([f.exposure_amount for f in findings])
+        return {"exposure_ledger": exposure, "verified": verified, "findings_exposure": total_exp, "findings_count": len(findings), "ledger_count": (await s.execute(select(func.count(FinancialLedger.id)).where(FinancialLedger.org_id==ctx["membership"].org_id))).scalar()}

@@ -49,29 +49,29 @@
             <span class="landing-cta-note">Sem cartão. Ledger isolado por org.</span>
           </div>
           <div class="landing-trust" aria-label="Proposta em 3 partes">
-            <div><strong>AI lê</strong><span>— extrai deal, deal_owner, next_step</span></div>
+            <div><strong>AI lê</strong><span>— extrai riscos e descontos do deal</span></div>
             <div><strong>Python prova</strong><span>— soma em Decimal, sem float</span></div>
             <div><strong>Humano assina</strong><span>— Approve → Execute → Verify</span></div>
           </div>
-          <p class="landing-truth small t-muted">Limites enforcados do PLANS. Figures not shown do not exist.</p>
+          <p class="landing-truth small t-muted">Limites enforcados do PLANS. Figuras não exibidas não existem.</p>
         </div>
         <aside class="landing-hero-proof" aria-label="Excerto do ledger — ao vivo">
           <div class="ledger-sheet elev-1">
-            <div class="ledger-sheet-head"><strong>Excerto ao vivo</strong><span>{{ today }} · RLS org</span></div>
+            <div class="ledger-sheet-head"><strong>Excerto ao vivo</strong><span>{{ today }} · org-scoped</span></div>
             <div class="ledger-row"><span class="k">Exposure em findings</span><span class="v neg">{{ stats.exposure|brl }}</span></div>
             <div class="ledger-row"><span class="k">Verified no ledger</span><span class="v pos">{{ stats.verified|brl }}</span></div>
             <div class="ledger-row"><span class="k">Findings abertos</span><span class="v num">{{ stats.findings }}</span></div>
             <div class="ledger-row"><span class="k">Deals em pipeline</span><span class="v num">{{ stats.opps }}</span></div>
             <div class="ledger-row"><span class="k">Contas on record</span><span class="v num">{{ stats.accounts }}</span></div>
-            <div class="ledger-foot">Todo número acima é leitura direta do ledger. <b>Sem estimativas.</b> <span class="t-muted">PLANS: starter {{ plans.starter.max_findings }} · pro {{ plans.pro.max_findings }} · enterprise {{ plans.enterprise.max_findings }} findings.</span></div>
+            <div class="ledger-foot">Todo número acima é leitura direta do banco. <b>Sem estimativas.</b> <span class="t-muted">PLANS: starter {{ plans.starter.max_findings }} · pro {{ plans.pro.max_findings }} · enterprise {{ plans.enterprise.max_findings }} findings.</span></div>
           </div>
-          <p class="landing-proof-caption">Se o Demo não existe, os zeros são verdadeiros — não mock.</p>
+          <p class="landing-proof-caption">Sem sessão, os zeros são leitura real do banco — não mock.</p>
         </aside>
       </div>
       <div class="stamp-rail" aria-label="Governança">
         <span class="stamp">Approve<small>humano assina</small></span>
         <span class="stamp-link" aria-hidden="true">→</span>
-        <span class="stamp">Execute<small>ledger escreve</small></span>
+        <span class="stamp">Execute<small>estado avança</small></span>
         <span class="stamp-link" aria-hidden="true">→</span>
         <span class="stamp done">Verify<small>evidência prova</small></span>
       </div>
@@ -95,7 +95,7 @@
           <span class="step-num">2</span>
           <div>
             <h3>Execute</h3>
-            <p>Escrita idempotente no FinancialLedger. Mesma idempotency_key não duplica. Python soma em Decimal, não float.</p>
+            <p>Transição para EXECUTED registrada com timestamp. O ledger só recebe valor na verificação, com idempotência e Decimal.</p>
           </div>
         </div>
         <div class="landing-seq-row">
@@ -129,7 +129,7 @@
             <span class="stat-icon">▸</span>
             <h3>Deals</h3>
           </div>
-          <p>Pipeline sob auditoria. Stage, amount, currency — validados contra ledger, não planilha.</p>
+          <p>Pipeline sob auditoria. Stage, amount e currency validados; escopo por org.</p>
           <a href="/deals" class="row-link">Ver deals →</a>
         </article>
         <article class="landing-feature">
@@ -137,7 +137,7 @@
             <span class="stat-icon violet">◈</span>
             <h3>Accounts</h3>
           </div>
-          <p>Contas on record. PROSPECT ou CUSTOMER. Filtro por tipo, sem duplicidade por org.</p>
+          <p>Contas on record. PROSPECT ou CUSTOMER. Filtro por tipo, escopado por org.</p>
           <a href="/accounts" class="row-link">Ver contas →</a>
         </article>
         <article class="landing-feature">
@@ -153,7 +153,7 @@
             <span class="stat-icon violet">✓</span>
             <h3>Actions</h3>
           </div>
-          <p>Propostas, aprovadas, executadas. Cada transição exige capability — OWNER/MEMBER com permissão.</p>
+          <p>Propostas, aprovadas, executadas. Cada transição exige capability (approve, execute, verify).</p>
           <a href="/actions" class="row-link">Ver actions →</a>
         </article>
         <article class="landing-feature">
@@ -179,7 +179,6 @@
         <div class="card card-content plan-card {% if name=='pro' %}card-featured{% endif %}">
           <div class="stat-cap {% if name=='pro' %}t-mint{% endif %}">{% if name=='pro' %}— recomendado · {% endif %}{{ name }}</div>
           <div class="plan-metrics">
-            <div class="plan-metric"><div class="stat-cap">Orgs</div><div class="v num">{{ plan.max_orgs }}</div></div>
             <div class="plan-metric"><div class="stat-cap">Users</div><div class="v num">{{ plan.max_users }}</div></div>
             <div class="plan-metric"><div class="stat-cap">Accounts</div><div class="v num">{{ plan.max_accounts }}</div></div>
             <div class="plan-metric"><div class="stat-cap">Findings</div><div class="v num">{{ plan.max_findings }}</div></div>
@@ -190,9 +189,9 @@
       </div>
       <div class="card card-content mt-4" style="border-style:dashed">
         <ul class="space-y-2 text-sm t-muted" style="margin:0; padding-left:1.2rem; list-style:disc">
-          <li>Todos os planos incluem: ledger idempotente, evidence pack, RLS org-isolation, deal audit, LGPD export/delete.</li>
+          <li>Todos os planos incluem: ledger idempotente, evidence pack, isolamento por org, deal audit, LGPD export/delete.</li>
           <li>*Estimativa: ~R$ exposto recuperável depende de deal mix; não garantido. Use Financial Impact para real.</li>
-          <li>Limite não exibido aqui é fictício. Se não está em PLANS, não existe. Veja <a href="/pricing" class="link">/pricing</a>.</li>
+          <li>Só exibimos limites que estão em <code>PLANS</code>; nada inventado. Veja <a href="/pricing" class="link">/pricing</a>.</li>
           <li>Upgrade: trocar <code>org.extra_data.plan</code> → starter|pro|enterprise; limites aplicados imediatamente.</li>
         </ul>
       </div>
@@ -203,12 +202,12 @@
       <div class="landing-section-head">
         <p class="kicker">Suite AIOS + ARVO</p>
         <h2 class="page-title">Ledger idempotente + Deal Desk alerta</h2>
-        <p class="page-sub" style="max-width:38rem">ARVO valida negociação contra <code>FinancialLedger</code> idempotente; AIOS alerta desvio com <code>EvidencePack 3 camadas</code> e <code>PendingAction</code> que expira em 7 dias por org (configurável). Humano decide, ledger registra. Alerta-only com disclaimer v1-long — sem responsabilidade civil/criminal da plataforma.</p>
+        <p class="page-sub" style="max-width:38rem">ARVO valida negociação contra <code>FinancialLedger</code> idempotente e expõe <code>POST /api/v1/integrations/aios/v1/events</code> com HMAC e <code>Idempotency-Key</code>. Recursos de HITL e budget pertencem ao produto AIOS, não ao ARVO.</p>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
-        <div class="card card-content"><h3>HITL por org</h3><p class="small t-muted">Expiração configurável em AIOS /dashboard/settings — 3/7/14/30/60 dias. Cron 02:00 UTC. Block só para PLANS.</p></div>
-        <div class="card card-content"><h3>Budget 2026</h3><p class="small t-muted">WhatsApp BR: marketing 0.0627, service 1000 free + 72h entry-point. Burn → “Dura até”.</p></div>
-        <div class="card card-content"><h3>Suite HMAC</h3><p class="small t-muted">POST /events idempotente com <code>Idempotency-Key</code>. AIOS 8777 ↔ ARVO 9777.</p></div>
+        <div class="card card-content"><h3>HITL no AIOS</h3><p class="small t-muted">Expiração de PendingAction é configuração do AIOS /dashboard/settings. Não é feature do ARVO.</p></div>
+        <div class="card card-content"><h3>Budget no AIOS</h3><p class="small t-muted">Custos de WhatsApp e burn são calculados no AIOS; o ARVO não armazena esses números.</p></div>
+        <div class="card card-content"><h3>Suíte HMAC</h3><p class="small t-muted"><code>POST /api/v1/integrations/aios/v1/events</code> idempotente com <code>Idempotency-Key</code>; HMAC verificado server-side.</p></div>
       </div>
     </section>
 
@@ -216,8 +215,8 @@
     <section id="integracoes" class="landing-section">
       <div class="landing-section-head">
         <p class="kicker">Integrações</p>
-        <h2 class="page-title">CRM lê. CSV entra. Upload prova.</h2>
-        <p class="page-sub">Adaptadores com chave real ou stub explícito. Sem promessa fantasma.</p>
+        <h2 class="page-title">CSV entra. Upload registra. CRM em breve.</h2>
+        <p class="page-sub">Hoje: CSV e upload reais. Adaptadores CRM retornam 501 até a integração existir — sem dados de demo.</p>
       </div>
       <div class="landing-integrations">
         <span class="badge badge-default">HubSpot</span>
@@ -229,7 +228,7 @@
         <span class="badge badge-outline">CSV</span>
         <span class="badge badge-outline">Upload</span>
       </div>
-      <p class="small t-muted mt-3">Status por org em <a href="/integrations" class="link">/integrations</a> — configured ou stub, contagem por <code>RawRecord.source</code>.</p>
+      <p class="small t-muted mt-3">Status por org em <a href="/integrations" class="link">/integrations</a> — CSV/upload disponíveis; CRM retorna 501. Contagem por <code>RawRecord.source</code>.</p>
     </section>
 
     <!-- FECHO -->
@@ -250,7 +249,7 @@
   <footer class="landing-footer">
     <div class="landing-footer-inner">
       <span class="small t-muted">ARVO 0.1.0 — AI lê. Python prova. Humano assina.</span>
-      <span class="small t-muted">Limites enforcados do PLANS. Figures not shown do not exist.</span>
+      <span class="small t-muted">Limites enforcados do PLANS. Nada exibido fora dele.</span>
     </div>
   </footer>
 </body>

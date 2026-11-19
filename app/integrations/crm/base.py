@@ -10,28 +10,27 @@ class CRMAdapter:
         # Map raw → canonical account/contact/opportunity stub
         return {"raw": raw, "org_id": org_id, "source": self.source}
 
-class HubspotAdapter(CRMAdapter):
+class _UnimplementedAdapter(CRMAdapter):
+    async def fetch(self, ctx):
+        raise NotImplementedError(f"{self.source} live sync not implemented; CSV/upload only")
+
+
+class HubspotAdapter(_UnimplementedAdapter):
     source="HUBSPOT"
-    async def fetch(self, ctx): return [{"id":"hs_1","company":"Hubspot Demo","domain":"hubspot.demo","contact":"Ana","email":"ana@hubspot.demo"}]
 
-class SalesforceAdapter(CRMAdapter):
+class SalesforceAdapter(_UnimplementedAdapter):
     source="SALESFORCE"
-    async def fetch(self, ctx): return [{"Id":"sf_1","Name":"Salesforce Demo","Website":"salesforce.demo"}]
 
-class PipedriveAdapter(CRMAdapter):
+class PipedriveAdapter(_UnimplementedAdapter):
     source="PIPEDRIVE"
-    async def fetch(self, ctx): return [{"id":1,"name":"Pipedrive Demo","org_name":"Pipe Co"}]
 
-class TwentyAdapter(CRMAdapter):
+class TwentyAdapter(_UnimplementedAdapter):
     source="TWENTY"
-    async def fetch(self, ctx): return [{"id":"tw_1","name":"Twenty Demo"}]
 
-class GmailAdapter(CRMAdapter):
+class GmailAdapter(_UnimplementedAdapter):
     source="GMAIL"
-    async def fetch(self, ctx): return [{"id":"gmail_1","subject":"Proposta Acme","from":"deal@acme.com","body":"Desconto 12% solicitado"}]
 
-class OutlookAdapter(CRMAdapter):
+class OutlookAdapter(_UnimplementedAdapter):
     source="OUTLOOK"
-    async def fetch(self, ctx): return [{"id":"out_1","subject":"Follow-up Globex","body":"Aguardando aprovação"}]
 
 ADAPTERS = {"hubspot": HubspotAdapter(), "salesforce": SalesforceAdapter(), "pipedrive": PipedriveAdapter(), "twenty": TwentyAdapter(), "gmail": GmailAdapter(), "outlook": OutlookAdapter()}

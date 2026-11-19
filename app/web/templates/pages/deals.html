@@ -6,6 +6,26 @@
   <p class="page-sub">Each stage and amount stays on record.</p>
 </div>
 <section>
+  {% if accounts %}
+  <form class="card card-content form-stack mb-4" method="post" action="/deals">
+    <h2 class="card-title">Novo deal</h2>
+    <div class="field"><label for="deal-account">Conta</label>
+      <select id="deal-account" name="account_id" required class="input">
+        {% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label for="deal-name">Nome</label><input id="deal-name" name="name" required class="input" placeholder="Renovação anual" /></div>
+    <div class="field"><label for="deal-amount">Valor (BRL)</label><input id="deal-amount" name="amount" class="input" inputmode="decimal" placeholder="10000.00" /></div>
+    <div class="field"><label for="deal-stage">Stage</label>
+      <select id="deal-stage" name="stage" class="input">
+        {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary pressable">Criar deal</button>
+  </form>
+  {% else %}
+  <div class="card card-content mb-4"><p class="t-muted">Crie uma conta primeiro para registrar deals.</p></div>
+  {% endif %}
   <div class="table-wrap elev-1">
     <table class="table table-ledger table-mobile-card table-sticky table-zebra">
       <caption>{{ deals|length }} deal(s) em pipeline</caption>

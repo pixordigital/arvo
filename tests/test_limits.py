@@ -35,6 +35,61 @@ async def test_check_org_limits_within(tmp_path):
         # cleanup
         await s.delete(org); await s.commit()
 
+async def test_bulk_import_cannot_exceed_account_limit():
+    import uuid
+    from fastapi.testclient import TestClient
+    from app.core.security import create_token, hash_password
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Account, Membership, Organization, User
+    from app.main import app
+
+    tag = uuid.uuid4().hex[:8]
+    async with get_sessionmaker()() as s:
+        org = Organization(name="Bulk", slug=f"bulk-{tag}")
+        user = User(email=f"bulk-{tag}@arvo.test", hashed_password=hash_password("secret123"))
+        s.add_all([org, user]); await s.flush()
+        s.add(Membership(org_id=org.id, user_id=user.id, role="OWNER"))
+        for i in range(100):
+            s.add(Account(org_id=org.id, name=f"Existing {i}"))
+        await s.commit()
+        org_id, user_id = org.id, user.id
+
+    c = TestClient(app, follow_redirects=False)
+    h = {"Authorization": f"Bearer {create_token(user_id, org_id, 'OWNER')}"}
+    r = c.post("/api/v1/accounts/import/csv", json={"rows": [{"name": "Overflow"}]}, headers=h)
+    assert r.status_code == 402, r.text
+    r = c.post("/api/v1/accounts", json={"name": "Overflow"}, headers=h)
+    assert r.status_code == 402, r.text
+
+
+async def test_member_limit_is_enforced():
+    import uuid
+    from fastapi.testclient import TestClient
+    from app.core.security import create_token, hash_password
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Membership, Organization, User
+    from app.main import app
+
+    tag = uuid.uuid4().hex[:8]
+    async with get_sessionmaker()() as s:
+        org = Organization(name="Users", slug=f"users-{tag}")
+        owner = User(email=f"owner-{tag}@arvo.test", hashed_password=hash_password("secret123"))
+        s.add_all([org, owner]); await s.flush()
+        s.add(Membership(org_id=org.id, user_id=owner.id, role="OWNER"))
+        for i in range(4):
+            u = User(email=f"m{i}-{tag}@arvo.test", hashed_password=hash_password("secret123"))
+            s.add(u); await s.flush()
+            s.add(Membership(org_id=org.id, user_id=u.id, role="VIEWER"))
+        extra = User(email=f"extra-{tag}@arvo.test", hashed_password=hash_password("secret123"))
+        s.add(extra); await s.commit()
+        org_id, owner_id = org.id, owner.id
+
+    c = TestClient(app, follow_redirects=False)
+    h = {"Authorization": f"Bearer {create_token(owner_id, org_id, 'OWNER')}"}
+    r = c.post("/api/v1/auth/members", json={"email": f"extra-{tag}@arvo.test", "role": "VIEWER"}, headers=h)
+    assert r.status_code == 402, r.text
+
+
 def test_pricing_reflects_plans():
     from fastapi.testclient import TestClient
     from app.main import app

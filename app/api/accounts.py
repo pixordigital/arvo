@@ -1,14 +1,16 @@
 """ARVO — Accounts + Contacts API. Org-isolated, RLS via org_id filter."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.database.engine import get_sessionmaker
-from app.database.models import Account, Contact
+from app.database.models import CONTACT_ROLES, Account, Contact
 from app.api.deps import get_current_user
 from app.core.limits import check_org_limits
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
+
+ACCOUNT_TYPES = ("CUSTOMER", "PROSPECT", "PARTNER")
 
 class AccountIn(BaseModel):
     name: str
@@ -16,11 +18,53 @@ class AccountIn(BaseModel):
     industry: str | None = None
     type: str = "CUSTOMER"
 
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name required")
+        return v[:255]
+
+    @field_validator("type")
+    @classmethod
+    def valid_type(cls, v: str) -> str:
+        v = v.strip().upper()
+        if v not in ACCOUNT_TYPES:
+            raise ValueError(f"type must be one of {ACCOUNT_TYPES}")
+        return v
+
 class ContactIn(BaseModel):
     name: str
     email: str | None = None
     role: str = "OTHER"
     phone: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name required")
+        return v[:255]
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        v = v.strip().lower()
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("invalid email")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def valid_role(cls, v: str) -> str:
+        v = v.strip().upper()
+        if v not in CONTACT_ROLES:
+            raise ValueError(f"role must be one of {CONTACT_ROLES}")
+        return v
 
 @router.get("")
 async def list_accounts(ctx=Depends(get_current_user)):
@@ -58,10 +102,17 @@ async def add_contact(aid: str, inp: ContactIn, ctx=Depends(get_current_user)):
 async def import_csv(data: dict, ctx=Depends(get_current_user)):
     """Bulk import — MVP CSV/Upload endpoint. Expects {"rows":[{"name","domain"}]}."""
     rows = data.get("rows", [])
+    valid = [r for r in rows if str(r.get("name") or r.get("account_name") or "").strip()]
+    for r in valid:
+        t = str(r.get("type", "CUSTOMER")).strip().upper()
+        if t not in ACCOUNT_TYPES:
+            raise HTTPException(400, f"type must be one of {ACCOUNT_TYPES}")
+    ok, err, _ = await check_org_limits(ctx["membership"].org_id, "accounts", delta=len(valid))
+    if not ok: raise HTTPException(402, err)
     async with get_sessionmaker()() as s:
         created=[]
-        for r in rows:
-            a=Account(org_id=ctx["membership"].org_id, name=r.get("name") or r.get("account_name") or "Unnamed", domain=r.get("domain"), type=r.get("type","CUSTOMER"), owner_id=ctx["user"].id, extra_data={"import":"csv"})
+        for r in valid:
+            a=Account(org_id=ctx["membership"].org_id, name=(r.get("name") or r.get("account_name")).strip()[:255], domain=(r.get("domain") or "").strip() or None, type=str(r.get("type","CUSTOMER")).upper(), owner_id=ctx["user"].id, extra_data={"import":"csv"})
             s.add(a); created.append(a)
         await s.commit()
         for a in created: await s.refresh(a)

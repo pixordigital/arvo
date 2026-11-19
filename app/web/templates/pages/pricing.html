@@ -12,7 +12,6 @@
     <div class="card card-content card-hover hover-lift plan-card {% if name=='pro' %}card-featured{% endif %}">
       <div class="stat-cap {% if name=='pro' %}t-mint{% endif %}">{% if name=='pro' %}— recomendado · {% endif %}{{ name }}</div>
       <div class="plan-metrics">
-        <div class="plan-metric"><div class="stat-cap">Orgs</div><div class="v num">{{ plan.max_orgs }}</div></div>
         <div class="plan-metric"><div class="stat-cap">Users</div><div class="v num">{{ plan.max_users }}</div></div>
         <div class="plan-metric"><div class="stat-cap">Accounts</div><div class="v num">{{ plan.max_accounts }}</div></div>
         <div class="plan-metric"><div class="stat-cap">Findings</div><div class="v num">{{ plan.max_findings }}</div></div>
@@ -27,7 +26,7 @@
   <div class="card card-content">
     <h2 class="card-title mb-4">Notas</h2>
     <ul class="list-disc list-inside space-y-2 text-sm t-muted">
-      <li>Todos os planos incluem: ledger idempotente, evidence pack, RLS org-isolation, deal audit, LGPD export/delete.</li>
+      <li>Todos os planos incluem: ledger idempotente, evidence pack, isolamento por org, deal audit, LGPD export/delete.</li>
       <li>*Estimativa: ~R$ exposto recuperável depende de deal mix; não garantido. Use Financial Impact para real.</li>
       <li>Limites não exibidos aqui são fictícios. Se não está em PLANS, não existe.</li>
       <li>Upgrade: trocar <code>org.extra_data.plan</code> → starter|pro|enterprise; limites aplicados imediatamente.</li>

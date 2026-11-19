@@ -6,6 +6,9 @@ services:
     env_file: .env
     environment:
       ARVO_REDIS_URL: "redis://:${ARVO_REDIS_PASSWORD:-changeme}@redis:6379/0"
+      ARVO_DATABASE_URL: "sqlite+aiosqlite:////data/arvo.db"
+    volumes:
+      - arvo-data:/data
     depends_on:
       redis:
         condition: service_healthy
@@ -27,7 +30,13 @@ services:
     env_file: .env
     environment:
       ARVO_REDIS_URL: "redis://:${ARVO_REDIS_PASSWORD:-changeme}@redis:6379/0"
+      ARVO_DATABASE_URL: "sqlite+aiosqlite:////data/arvo.db"
+    volumes:
+      - arvo-data:/data
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  arvo-data:

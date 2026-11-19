@@ -6,6 +6,22 @@
   <p class="page-sub">Detected risks with auditable severity and status.</p>
 </div>
 <section>
+  <form class="card card-content form-stack mb-4" method="post" action="/findings">
+    <h2 class="card-title">Novo finding</h2>
+    <div class="field"><label for="find-title">Título</label><input id="find-title" name="title" required class="input" placeholder="Desconto fora da política" /></div>
+    <div class="field"><label for="find-kind">Tipo</label><input id="find-kind" name="kind" class="input" value="LEAKAGE" /></div>
+    <div class="field"><label for="find-severity">Severidade</label>
+      <select id="find-severity" name="severity" class="input">
+        <option value="LOW">LOW</option>
+        <option value="MEDIUM" selected>MEDIUM</option>
+        <option value="HIGH">HIGH</option>
+        <option value="CRITICAL">CRITICAL</option>
+      </select>
+    </div>
+    <div class="field"><label for="find-exposure">Exposição (BRL)</label><input id="find-exposure" name="exposure_amount" class="input" inputmode="decimal" placeholder="0.00" /></div>
+    <div class="field"><label for="find-desc">Descrição</label><input id="find-desc" name="description" class="input" placeholder="Contexto e fonte" /></div>
+    <button type="submit" class="btn btn-primary pressable">Criar finding</button>
+  </form>
   <div class="table-wrap elev-1">
     <table class="table table-ledger table-mobile-card table-sticky table-zebra">
       <caption>{{ findings|length }} finding(s) · ordenado por detecção</caption>
@@ -16,7 +32,7 @@
           <td data-label="ID" class="font-mono t-muted">{{ f.id[:8] }}</td>
           <td data-label="Título" class="t-fg font-medium">{{ f.title }}</td>
           <td data-label="Tipo"><span class="badge badge-default">{{ f.kind }}</span></td>
-          <td data-label="Severidade"><span class="badge {% if f.severity=='critical' %}badge-destructive{% elif f.severity=='high' %}badge-warning{% elif f.severity=='medium' %}badge-info{% else %}badge-default{% endif %}"><span class="dot"></span>{{ f.severity }}</span></td>
+          <td data-label="Severidade"><span class="badge {% if f.severity=='CRITICAL' %}badge-destructive{% elif f.severity=='HIGH' %}badge-warning{% elif f.severity=='MEDIUM' %}badge-info{% else %}badge-default{% endif %}"><span class="dot"></span>{{ f.severity }}</span></td>
           <td data-label="Status"><span class="badge badge-outline">{{ f.status }}</span></td>
           <td data-label="Exposição" class="num t-fg">R$ {{ f.exposure }}</td>
           <td data-label="Moeda" class="t-muted">{{ f.currency }}</td>

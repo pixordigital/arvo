@@ -9,7 +9,7 @@
   <div class="table-wrap elev-1">
     <table class="table table-mobile-card table-sticky table-zebra">
       <caption>{{ actions|length }} action(s) · rastreável em ledger</caption>
-      <thead><tr><th>ID</th><th>Título</th><th>Status</th><th class="num">Verificado</th><th>Finding</th></tr></thead>
+      <thead><tr><th>ID</th><th>Título</th><th>Status</th><th class="num">Verificado</th><th>Finding</th><th>Ação</th></tr></thead>
       <tbody>
         {% for a in actions %}
         <tr>
@@ -18,6 +18,18 @@
           <td data-label="Status"><span class="badge {% if a.status=='PROPOSED' %}badge-default{% elif a.status=='APPROVED' %}badge-info{% elif a.status=='EXECUTING' %}badge-warning{% elif a.status=='EXECUTED' %}badge-success{% elif a.status=='VERIFIED' %}badge-success{% elif a.status=='REJECTED' %}badge-destructive{% else %}badge-default{% endif %}"><span class="dot"></span>{{ a.status }}</span></td>
           <td data-label="Verificado" class="num t-fg">{{ a.verified_amount or '—' }}</td>
           <td data-label="Finding"><span class="t-muted text-xs font-mono">Finding {{ a.finding_id[:8] if a.finding_id else '—' }}</span></td>
+          <td data-label="Ação">
+            {% if a.status == 'PENDING_APPROVAL' %}
+            <form method="post" action="/actions/{{ a.id }}/approve"><button class="btn btn-secondary btn-sm pressable" type="submit">Approve</button></form>
+            {% elif a.status == 'APPROVED' %}
+            <form method="post" action="/actions/{{ a.id }}/execute"><button class="btn btn-secondary btn-sm pressable" type="submit">Execute</button></form>
+            {% elif a.status == 'EXECUTED' %}
+            <form method="post" action="/actions/{{ a.id }}/verify" class="flex gap-2">
+              <input name="verified_amount" class="input btn-sm" inputmode="decimal" placeholder="0.00" required />
+              <button class="btn btn-primary btn-sm pressable" type="submit">Verify</button>
+            </form>
+            {% else %}<span class="t-muted text-xs">—</span>{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

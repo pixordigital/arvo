@@ -1,4 +1,4 @@
-"""ARVO DB engine — async SQLAlchemy + Supabase Postgres. pgvector ready."""
+"""ARVO DB engine — async SQLAlchemy on SQLite (local) or Postgres (Supabase)."""
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase

@@ -1,7 +1,8 @@
-"""ARVO Web — Jinja2 routes. Spec §231-242. Shared base.html, auth-aware nav, CSRF on POST."""
+"""ARVO Web — Jinja2 routes. Every data page is scoped to the authenticated org."""
 
 from pathlib import Path
-from fastapi import APIRouter, Request, Form
+
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -28,6 +29,7 @@ _PT_MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "ou
 
 def _today_pt() -> str:
     from datetime import date
+
     d = date.today()
     return f"{d.day:02d} {_PT_MONTHS[d.month - 1]} {d.year}"
 
@@ -60,6 +62,7 @@ BOTTOM_NAV = [
 
 def _ctx(title: str, active: str, extra: dict | None = None, request: Request | None = None) -> dict:
     from app.core.config import settings
+
     theme = "dark"
     if request:
         theme = request.cookies.get("arvo-theme", "dark")
@@ -79,40 +82,145 @@ def _ctx(title: str, active: str, extra: dict | None = None, request: Request | 
     return base
 
 
-async def _demo_org_id():
+def _login_redirect() -> HTTPException:
+    return HTTPException(status_code=307, headers={"Location": "/login"})
+
+
+async def _optional_org(request: Request) -> dict | None:
+    """Resolve the active org from the auth cookie; None when not authenticated."""
     from sqlalchemy import select
+
+    from app.core.security import decode_token
     from app.database.engine import get_sessionmaker
-    from app.database.models import Organization
+    from app.database.models import Membership, User
+
+    tok = request.cookies.get("arvo_token") or request.cookies.get("aios_token")
+    if not tok:
+        return None
+    try:
+        claims = decode_token(tok)
+    except HTTPException:
+        return None
     async with get_sessionmaker()() as s:
-        org = (await s.execute(select(Organization).where(Organization.slug == "arvo-demo"))).scalar_one_or_none()
-        return org.id if org else None
+        user = await s.get(User, claims.get("sub"))
+        if not user or not user.is_active:
+            return None
+        mem = (
+            await s.execute(
+                select(Membership).where(
+                    Membership.user_id == user.id,
+                    Membership.org_id == claims.get("org_id"),
+                    Membership.is_active.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+    if not mem:
+        return None
+    return {"org_id": mem.org_id, "user_id": user.id, "role": mem.role}
+
+
+async def _require_org(request: Request) -> dict:
+    auth = await _optional_org(request)
+    if auth is None:
+        raise _login_redirect()
+    return auth
+
+
+def _set_session(resp: RedirectResponse, token: str, request: Request) -> RedirectResponse:
+    from app.core.config import settings
+
+    secure = request.url.scheme == "https" or settings.https_only
+    resp.set_cookie(
+        "arvo_token", token, httponly=True, samesite="lax", secure=secure, max_age=3600
+    )
+    return resp
+
+
+async def _stats(org_id: str | None) -> dict:
+    """Read-only org metrics. No org means true zeros, never demo data."""
+    from sqlalchemy import func, select
+
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Account, Finding, FinancialLedger, Opportunity
+    from app.services.financial import sum_amounts
+
+    stats = {
+        "accounts": 0,
+        "opps": 0,
+        "findings": 0,
+        "critical": 0,
+        "exposure": "0.00",
+        "verified": "0.00",
+        "debit": "0.00",
+        "credit": "0.00",
+        "ledger_count": 0,
+    }
+    if not org_id:
+        return stats
+    async with get_sessionmaker()() as s:
+        stats["accounts"] = (
+            await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))
+        ).scalar() or 0
+        stats["opps"] = (
+            await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))
+        ).scalar() or 0
+        stats["findings"] = (
+            await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))
+        ).scalar() or 0
+        stats["critical"] = (
+            await s.execute(
+                select(func.count(Finding.id)).where(
+                    Finding.org_id == org_id, Finding.severity == "CRITICAL"
+                )
+            )
+        ).scalar() or 0
+        exp_vals = (
+            await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))
+        ).scalars().all()
+        stats["exposure"] = sum_amounts(exp_vals)
+        for entry_type, key in (("DEBIT", "debit"), ("CREDIT", "credit"), ("VERIFIED", "verified")):
+            vals = (
+                await s.execute(
+                    select(FinancialLedger.amount).where(
+                        FinancialLedger.org_id == org_id,
+                        FinancialLedger.entry_type == entry_type,
+                    )
+                )
+            ).scalars().all()
+            stats[key] = sum_amounts(vals)
+        stats["ledger_count"] = (
+            await s.execute(select(func.count(FinancialLedger.id)).where(FinancialLedger.org_id == org_id))
+        ).scalar() or 0
+    ex_f = float(stats["exposure"])
+    ver_f = float(stats["verified"])
+    stats["leak_pct_verified"] = int(round(ver_f / ex_f * 100)) if ex_f > 0 else 0
+    stats["leak_pct_open"] = 100 - stats["leak_pct_verified"] if ex_f > 0 else 0
+    return stats
+
+
+@router.get("/", response_class=HTMLResponse)
+async def home_root(request: Request):
+    from app.core.config import PLANS
+
+    auth = await _optional_org(request)
+    stats = await _stats(auth["org_id"] if auth else None)
+    return templates.TemplateResponse(
+        request, "pages/home.html", _ctx("Home", "home", {"plans": PLANS, "stats": stats}, request)
+    )
 
 
 @router.get("/home", response_class=HTMLResponse)
 async def home(request: Request):
-    from sqlalchemy import select, func
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Account, Opportunity, Finding, FinancialLedger
-    from app.core.config import PLANS
-    org_id = await _demo_org_id()
-    stats = {"accounts": 0, "opps": 0, "findings": 0, "exposure": "0.00", "verified": "0.00"}
-    if org_id:
-        from app.services.financial import sum_amounts
-        async with get_sessionmaker()() as s:
-            stats["accounts"] = (await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))).scalar()
-            stats["opps"] = (await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))).scalar()
-            stats["findings"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar()
-            exp_vals = (await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))).scalars().all()
-            stats["exposure"] = sum_amounts(exp_vals)
-            ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalars().all()
-            stats["verified"] = sum_amounts(ver_vals)
-    return templates.TemplateResponse(request, "pages/home.html", _ctx("Home", "home", {"plans": PLANS, "stats": stats}, request))
+    return await home_root(request)
 
 
 @router.get("/pricing", response_class=HTMLResponse)
 async def pricing(request: Request):
     from app.core.config import PLANS
-    return templates.TemplateResponse(request, "pages/pricing.html", _ctx("Pricing", "pricing", {"plans": PLANS}, request))
+
+    return templates.TemplateResponse(
+        request, "pages/pricing.html", _ctx("Pricing", "pricing", {"plans": PLANS}, request)
+    )
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -122,49 +230,108 @@ async def login_page(request: Request):
 
 @router.post("/login", response_class=HTMLResponse)
 async def login_post(request: Request, email: str = Form(...), password: str = Form(...)):
-    from app.database.engine import get_sessionmaker
     from sqlalchemy import select
-    from app.database.models import User, Membership
-    from app.core.security import verify_password, create_token
+
+    from app.core.security import create_token, verify_password
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Membership, User
+
     async with get_sessionmaker()() as s:
         user = (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
         if not user or not verify_password(password, user.hashed_password):
-            return templates.TemplateResponse(request, "pages/login.html", _ctx("Login", "login", {"error": "Credenciais inválidas"}, request), status_code=401)
-        mem = (await s.execute(select(Membership).where(Membership.user_id == user.id))).scalars().first()
+            return templates.TemplateResponse(
+                request,
+                "pages/login.html",
+                _ctx("Login", "login", {"error": "Credenciais inválidas"}, request),
+                status_code=401,
+            )
+        mem = (
+            await s.execute(
+                select(Membership).where(
+                    Membership.user_id == user.id, Membership.is_active.is_(True)
+                )
+            )
+        ).scalars().first()
         if not mem:
-            return templates.TemplateResponse(request, "pages/login.html", _ctx("Login", "login", {"error": "Sem organização"}, request), status_code=403)
+            return templates.TemplateResponse(
+                request,
+                "pages/login.html",
+                _ctx("Login", "login", {"error": "Sem organização"}, request),
+                status_code=403,
+            )
         tok = create_token(user.id, mem.org_id, mem.role)
-        resp = RedirectResponse(url="/", status_code=302)
-        resp.set_cookie("arvo_token", tok, httponly=True, samesite="lax", max_age=3600)
-        return resp
+    return _set_session(RedirectResponse(url="/control-center", status_code=302), tok, request)
 
 
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
-    return templates.TemplateResponse(request, "pages/register.html", _ctx("Register", "register", {}, request))
+    return templates.TemplateResponse(
+        request, "pages/register.html", _ctx("Register", "register", {}, request)
+    )
 
 
 @router.post("/register", response_class=HTMLResponse)
-async def register_post(request: Request, email: str = Form(...), password: str = Form(...), org_name: str = Form(...), org_slug: str = Form(...)):
-    from app.database.engine import get_sessionmaker
+async def register_post(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    org_name: str = Form(...),
+    org_slug: str = Form(...),
+):
+    import re
+
     from sqlalchemy import select
-    from app.database.models import User, Organization, Membership
-    from app.core.security import hash_password, create_token
+
+    from app.core.security import create_token, hash_password
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Membership, Organization, User
+
+    email = email.strip().lower()
+    org_slug = org_slug.strip().lower()
+
+    def _bad(message: str):
+        return templates.TemplateResponse(
+            request,
+            "pages/register.html",
+            _ctx("Register", "register", {"error": message}, request),
+            status_code=400,
+        )
+
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return _bad("Email inválido")
+    if len(password) < 8:
+        return _bad("Senha precisa de ao menos 8 caracteres")
+    if not re.fullmatch(r"[a-z0-9-]{2,100}", org_slug):
+        return _bad("Slug: apenas letras minúsculas, números e hífen")
+    if not org_name.strip():
+        return _bad("Nome da organização obrigatório")
+    org_name = org_name.strip()[:255]
+
     async with get_sessionmaker()() as s:
         if (await s.execute(select(User).where(User.email == email))).scalar_one_or_none():
-            return templates.TemplateResponse(request, "pages/register.html", _ctx("Register", "register", {"error": "Email já existe"}, request), status_code=400)
+            return templates.TemplateResponse(
+                request,
+                "pages/register.html",
+                _ctx("Register", "register", {"error": "Email já existe"}, request),
+                status_code=400,
+            )
         if (await s.execute(select(Organization).where(Organization.slug == org_slug))).scalar_one_or_none():
-            return templates.TemplateResponse(request, "pages/register.html", _ctx("Register", "register", {"error": "Slug já existe"}, request), status_code=400)
+            return templates.TemplateResponse(
+                request,
+                "pages/register.html",
+                _ctx("Register", "register", {"error": "Slug já existe"}, request),
+                status_code=400,
+            )
         org = Organization(name=org_name, slug=org_slug)
-        s.add(org); await s.flush()
+        s.add(org)
+        await s.flush()
         user = User(email=email, hashed_password=hash_password(password))
-        s.add(user); await s.flush()
-        mem = Membership(org_id=org.id, user_id=user.id, role="OWNER")
-        s.add(mem); await s.commit()
+        s.add(user)
+        await s.flush()
+        s.add(Membership(org_id=org.id, user_id=user.id, role="OWNER"))
+        await s.commit()
         tok = create_token(user.id, org.id, "OWNER")
-        resp = RedirectResponse(url="/", status_code=302)
-        resp.set_cookie("arvo_token", tok, httponly=True, samesite="lax", max_age=3600)
-        return resp
+    return _set_session(RedirectResponse(url="/control-center", status_code=302), tok, request)
 
 
 @router.get("/logout")
@@ -174,192 +341,591 @@ async def logout():
     return resp
 
 
-@router.get("/", response_class=HTMLResponse)
-async def home_root(request: Request):
-    from sqlalchemy import select, func
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Account, Opportunity, Finding, FinancialLedger
-    from app.core.config import PLANS
-    org_id = await _demo_org_id()
-    stats = {"accounts": 0, "opps": 0, "findings": 0, "exposure": "0.00", "verified": "0.00"}
-    if org_id:
-        from app.services.financial import sum_amounts
-        async with get_sessionmaker()() as s:
-            stats["accounts"] = (await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))).scalar()
-            stats["opps"] = (await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))).scalar()
-            stats["findings"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar()
-            exp_vals = (await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))).scalars().all()
-            stats["exposure"] = sum_amounts(exp_vals)
-            ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalars().all()
-            stats["verified"] = sum_amounts(ver_vals)
-    return templates.TemplateResponse(request, "pages/home.html", _ctx("Home", "home", {"plans": PLANS, "stats": stats}, request))
-
-
 @router.get("/control-center", response_class=HTMLResponse)
 async def control_center(request: Request):
-    from sqlalchemy import select, func
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Account, Opportunity, Finding, FinancialLedger
-    org_id = await _demo_org_id()
-    stats = {"accounts": 0, "opps": 0, "findings": 0, "critical": 0, "exposure": "0.00", "verified": "0.00"}
-    if org_id:
-        from app.services.financial import sum_amounts
-        async with get_sessionmaker()() as s:
-            stats["accounts"] = (await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))).scalar()
-            stats["opps"] = (await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))).scalar()
-            stats["findings"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar()
-            stats["critical"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id, Finding.severity == "critical"))).scalar() or 0
-            exp_vals = (await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))).scalars().all()
-            stats["exposure"] = sum_amounts(exp_vals)
-            ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalars().all()
-            stats["verified"] = sum_amounts(ver_vals)
-    ex_f = float(stats["exposure"]); ver_f = float(stats["verified"])
-    stats["leak_pct_verified"] = int(round(ver_f / ex_f * 100)) if ex_f > 0 else 0
-    stats["leak_pct_open"] = 100 - stats["leak_pct_verified"] if ex_f > 0 else 0
-    return templates.TemplateResponse(request, "pages/control_center.html", _ctx("Control Center", "control-center", {"stats": stats}, request))
+    auth = await _require_org(request)
+    stats = await _stats(auth["org_id"])
+    return templates.TemplateResponse(
+        request,
+        "pages/control_center.html",
+        _ctx("Control Center", "control-center", {"stats": stats}, request),
+    )
 
 
 @router.get("/findings", response_class=HTMLResponse)
 async def findings(request: Request):
     from sqlalchemy import select
+
     from app.database.engine import get_sessionmaker
     from app.database.models import Finding
-    org_id = await _demo_org_id()
-    rows = []
-    if org_id:
-        async with get_sessionmaker()() as s:
-            rows = (await s.execute(select(Finding).where(Finding.org_id == org_id).order_by(Finding.created_at.desc()))).scalars().all()
-            rows = [{"id": r.id, "title": r.title, "kind": r.kind, "status": r.status, "severity": r.severity, "exposure": r.exposure_amount, "currency": r.currency} for r in rows]
-    return templates.TemplateResponse(request, "pages/findings.html", _ctx("Findings", "findings", {"findings": rows}, request))
+
+    auth = await _require_org(request)
+    async with get_sessionmaker()() as s:
+        rows = (
+            await s.execute(
+                select(Finding)
+                .where(Finding.org_id == auth["org_id"])
+                .order_by(Finding.created_at.desc())
+            )
+        ).scalars().all()
+        rows = [
+            {
+                "id": r.id,
+                "title": r.title,
+                "kind": r.kind,
+                "status": r.status,
+                "severity": r.severity,
+                "exposure": r.exposure_amount,
+                "currency": r.currency,
+            }
+            for r in rows
+        ]
+    return templates.TemplateResponse(
+        request, "pages/findings.html", _ctx("Findings", "findings", {"findings": rows}, request)
+    )
 
 
 @router.get("/deals", response_class=HTMLResponse)
 async def deals(request: Request):
     from sqlalchemy import select
+
     from app.database.engine import get_sessionmaker
-    from app.database.models import Opportunity
-    org_id = await _demo_org_id()
-    rows = []
-    if org_id:
-        async with get_sessionmaker()() as s:
-            rows = (await s.execute(select(Opportunity).where(Opportunity.org_id == org_id).order_by(Opportunity.created_at.desc()))).scalars().all()
-            rows = [{"id": r.id, "name": r.name, "stage": r.stage, "amount": r.amount, "currency": r.currency} for r in rows]
-    return templates.TemplateResponse(request, "pages/deals.html", _ctx("Deals", "deals", {"deals": rows}, request))
+    from app.database.models import OPP_STAGES, Account, Opportunity
+
+    auth = await _require_org(request)
+    async with get_sessionmaker()() as s:
+        rows = (
+            await s.execute(
+                select(Opportunity)
+                .where(Opportunity.org_id == auth["org_id"])
+                .order_by(Opportunity.created_at.desc())
+            )
+        ).scalars().all()
+        rows = [
+            {"id": r.id, "name": r.name, "stage": r.stage, "amount": r.amount, "currency": r.currency}
+            for r in rows
+        ]
+        accounts_list = (
+            await s.execute(
+                select(Account).where(Account.org_id == auth["org_id"]).order_by(Account.name)
+            )
+        ).scalars().all()
+        accounts_list = [{"id": a.id, "name": a.name} for a in accounts_list]
+    return templates.TemplateResponse(
+        request,
+        "pages/deals.html",
+        _ctx(
+            "Deals",
+            "deals",
+            {"deals": rows, "accounts": accounts_list, "stages": OPP_STAGES},
+            request,
+        ),
+    )
 
 
 @router.get("/accounts", response_class=HTMLResponse)
 async def accounts(request: Request):
     from sqlalchemy import select
+
     from app.database.engine import get_sessionmaker
     from app.database.models import Account
-    org_id = await _demo_org_id()
+
+    auth = await _require_org(request)
     type_filter = request.query_params.get("type")
     if type_filter not in ("PROSPECT", "CUSTOMER"):
         type_filter = None
-    rows = []
-    if org_id:
-        async with get_sessionmaker()() as s:
-            q = select(Account).where(Account.org_id == org_id)
-            if type_filter:
-                q = q.where(Account.type == type_filter)
-            rows = (await s.execute(q.order_by(Account.created_at.desc()))).scalars().all()
-            rows = [{"id": r.id, "name": r.name, "domain": r.domain, "type": r.type} for r in rows]
-    return templates.TemplateResponse(request, "pages/accounts.html", _ctx("Accounts", "accounts", {"accounts": rows, "type_filter": type_filter}, request))
+    async with get_sessionmaker()() as s:
+        q = select(Account).where(Account.org_id == auth["org_id"])
+        if type_filter:
+            q = q.where(Account.type == type_filter)
+        rows = (await s.execute(q.order_by(Account.created_at.desc()))).scalars().all()
+        rows = [{"id": r.id, "name": r.name, "domain": r.domain, "type": r.type} for r in rows]
+    return templates.TemplateResponse(
+        request,
+        "pages/accounts.html",
+        _ctx("Accounts", "accounts", {"accounts": rows, "type_filter": type_filter}, request),
+    )
+
+
+@router.post("/accounts")
+async def accounts_create(
+    request: Request,
+    name: str = Form(...),
+    domain: str = Form(""),
+    type: str = Form("CUSTOMER"),
+):
+    from datetime import datetime, timezone
+
+    from app.core.limits import check_org_limits
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Account
+
+    auth = await _require_org(request)
+    name = name.strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    if type not in ("CUSTOMER", "PROSPECT", "PARTNER"):
+        raise HTTPException(400, "Invalid account type")
+    ok, err, _ = await check_org_limits(auth["org_id"], "accounts")
+    if not ok:
+        raise HTTPException(402, err)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with get_sessionmaker()() as s:
+        s.add(
+            Account(
+                org_id=auth["org_id"],
+                name=name[:255],
+                domain=domain.strip()[:255] or None,
+                type=type,
+                owner_id=auth["user_id"],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await s.commit()
+    return RedirectResponse(url="/accounts", status_code=302)
+
+
+@router.post("/accounts/import")
+async def accounts_import(request: Request, file: UploadFile = File(...)):
+    import csv
+    import io
+
+    from app.core.limits import check_org_limits
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Account, RawRecord
+
+    auth = await _require_org(request)
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(413, "Upload exceeds 5 MB")
+    rows = list(csv.DictReader(io.StringIO(data.decode("utf-8", errors="ignore"))))
+    valid = [r for r in rows if (r.get("name") or r.get("account_name") or r.get("company"))]
+    ok, err, _ = await check_org_limits(auth["org_id"], "accounts", delta=len(valid))
+    if not ok and valid:
+        raise HTTPException(402, err)
+    async with get_sessionmaker()() as s:
+        raw = RawRecord(
+            org_id=auth["org_id"],
+            source="CSV",
+            source_id=file.filename,
+            payload={"rows": rows, "filename": file.filename},
+            status="NORMALIZED",
+        )
+        s.add(raw)
+        for r in valid:
+            name = (r.get("name") or r.get("account_name") or r.get("company")).strip()
+            s.add(
+                Account(
+                    org_id=auth["org_id"],
+                    name=name,
+                    domain=(r.get("domain") or "").strip() or None,
+                    type="CUSTOMER",
+                    owner_id=auth["user_id"],
+                    extra_data={"ingest": "csv", "raw": r},
+                )
+            )
+        await s.commit()
+    return RedirectResponse(url="/accounts", status_code=302)
+
+
+@router.post("/deals")
+async def deals_create(
+    request: Request,
+    account_id: str = Form(...),
+    name: str = Form(...),
+    amount: str = Form("0"),
+    stage: str = Form("PROSPECTING"),
+    currency: str = Form("BRL"),
+):
+    from app.database.engine import get_sessionmaker
+    from app.database.models import OPP_STAGES, Account, Opportunity
+    from app.services.financial import D, money
+
+    auth = await _require_org(request)
+    name = name.strip()
+    currency = currency.strip().upper()
+    if not name:
+        raise HTTPException(400, "name required")
+    if stage not in OPP_STAGES:
+        raise HTTPException(400, "Invalid stage")
+    if len(currency) != 3 or not currency.isalpha():
+        raise HTTPException(400, "currency must be a 3-letter code")
+    try:
+        amount_d = D(amount)
+    except Exception as e:
+        raise HTTPException(400, "amount must be a decimal number") from e
+    if amount_d < 0:
+        raise HTTPException(400, "amount must be >= 0")
+    async with get_sessionmaker()() as s:
+        acc = await s.get(Account, account_id)
+        if not acc or acc.org_id != auth["org_id"]:
+            raise HTTPException(404, "Account not found")
+        s.add(
+            Opportunity(
+                org_id=auth["org_id"],
+                account_id=account_id,
+                name=name[:255],
+                amount=money(amount_d),
+                stage=stage,
+                currency=currency,
+                owner_id=auth["user_id"],
+            )
+        )
+        await s.commit()
+    return RedirectResponse(url="/deals", status_code=302)
+
+
+@router.post("/findings")
+async def findings_create(
+    request: Request,
+    title: str = Form(...),
+    kind: str = Form("LEAKAGE"),
+    severity: str = Form("MEDIUM"),
+    exposure_amount: str = Form("0"),
+    description: str = Form(""),
+):
+    from app.core.limits import check_org_limits
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Finding, FinancialEvent
+    from app.services.financial import D, idempotency_key, money
+
+    auth = await _require_org(request)
+    title = title.strip()
+    if not title:
+        raise HTTPException(400, "title required")
+    if severity not in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
+        raise HTTPException(400, "Invalid severity")
+    try:
+        amount = D(exposure_amount)
+    except Exception as e:
+        raise HTTPException(400, "exposure_amount must be a decimal number") from e
+    if amount < 0:
+        raise HTTPException(400, "exposure_amount must be >= 0")
+    ok, err, _ = await check_org_limits(auth["org_id"], "findings")
+    if not ok:
+        raise HTTPException(402, err)
+    async with get_sessionmaker()() as s:
+        f = Finding(
+            org_id=auth["org_id"],
+            kind=(kind.strip().upper() or "LEAKAGE")[:100],
+            title=title[:500],
+            description=description or None,
+            severity=severity,
+            exposure_amount=money(amount),
+            currency="BRL",
+        )
+        s.add(f)
+        await s.flush()
+        s.add(
+            FinancialEvent(
+                org_id=auth["org_id"],
+                kind="RISK_EXPOSURE",
+                amount=money(amount),
+                currency="BRL",
+                idempotency_key=idempotency_key(auth["org_id"], "finding", f.id),
+            )
+        )
+        await s.commit()
+    return RedirectResponse(url="/findings", status_code=302)
+
+
+@router.post("/actions/{aid}/{transition}")
+async def action_transition(
+    request: Request, aid: str, transition: str, verified_amount: str = Form("0")
+):
+    from datetime import datetime, timezone
+
+    from sqlalchemy import func, select
+
+    from app.database.engine import get_sessionmaker
+    from app.database.models import (
+        Action,
+        Finding,
+        FindingEvidence,
+        FinancialEvent,
+        FinancialLedger,
+    )
+    from app.services.financial import D, idempotency_key, money
+
+    auth = await _require_org(request)
+    if transition not in ("approve", "execute", "verify"):
+        raise HTTPException(404)
+    from app.database.models import has_capability
+    capability = {"approve": "findings:approve", "execute": "actions:execute", "verify": "findings:approve"}[transition]
+    if not has_capability(auth["role"], capability):
+        raise HTTPException(403, f"Need {capability} capability")
+    async with get_sessionmaker()() as s:
+        a = await s.get(Action, aid)
+        if not a or a.org_id != auth["org_id"]:
+            raise HTTPException(404)
+        f = await s.get(Finding, a.finding_id)
+        if transition == "approve":
+            if a.status != "PENDING_APPROVAL":
+                raise HTTPException(400, f"Cannot approve from {a.status}")
+            a.status = "APPROVED"
+            a.approved_by = auth["user_id"]
+            if f:
+                f.status = "ACTION_APPROVED"
+        elif transition == "execute":
+            if a.status != "APPROVED":
+                raise HTTPException(400, f"Need APPROVED, got {a.status}")
+            a.status = "EXECUTED"
+            a.executed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            if f:
+                f.status = "ACTION_EXECUTED"
+        else:
+            if a.status != "EXECUTED":
+                raise HTTPException(400, f"Need EXECUTED, got {a.status}")
+            if not f:
+                raise HTTPException(400, "Action has no finding")
+            amount = D(verified_amount)
+            if amount <= 0:
+                raise HTTPException(400, "verified_amount must be > 0")
+            ev_count = (
+                await s.execute(
+                    select(func.count(FindingEvidence.id)).where(
+                        FindingEvidence.finding_id == f.id
+                    )
+                )
+            ).scalar() or 0
+            if ev_count == 0 and not f.evidence_pack:
+                raise HTTPException(400, "Evidence required before financial verification")
+            if amount > D(f.exposure_amount):
+                raise HTTPException(400, f"verified_amount exceeds exposure {f.exposure_amount}")
+            verified = money(amount)
+            a.status = "VERIFIED"
+            a.verified_amount = verified
+            f.status = "FINANCIALLY_VERIFIED"
+            fe = FinancialEvent(
+                org_id=auth["org_id"],
+                kind="RECOVERED",
+                amount=verified,
+                currency="BRL",
+                idempotency_key=idempotency_key(auth["org_id"], "verified", aid),
+            )
+            s.add(fe)
+            await s.flush()
+            s.add(
+                FinancialLedger(
+                    org_id=auth["org_id"],
+                    event_id=fe.id,
+                    entry_type="VERIFIED",
+                    amount=verified,
+                    currency="BRL",
+                    description=f"Verified action {aid}",
+                )
+            )
+        await s.commit()
+    return RedirectResponse(url="/actions", status_code=302)
 
 
 @router.get("/financial-impact", response_class=HTMLResponse)
 async def financial_impact(request: Request):
-    from sqlalchemy import select, func
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Finding, FinancialLedger
-    org_id = await _demo_org_id()
-    data = {"exposure": "0.00", "verified": "0.00", "count": 0}
-    if org_id:
-        from app.services.financial import sum_amounts
-        async with get_sessionmaker()() as s:
-            data["count"] = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar()
-            exp_vals = (await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))).scalars().all()
-            data["exposure"] = sum_amounts(exp_vals)
-            ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "VERIFIED"))).scalars().all()
-            data["verified"] = sum_amounts(ver_vals)
-            deb_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id == org_id, FinancialLedger.entry_type == "DEBIT"))).scalars().all()
-            data["debit"] = sum_amounts(deb_vals)
-    return templates.TemplateResponse(request, "pages/financial_impact.html", _ctx("Financial Impact", "financial-impact", {"impact": data}, request))
+    auth = await _require_org(request)
+    stats = await _stats(auth["org_id"])
+    return templates.TemplateResponse(
+        request,
+        "pages/financial_impact.html",
+        _ctx("Financial Impact", "financial-impact", {"impact": stats}, request),
+    )
 
 
 @router.get("/actions", response_class=HTMLResponse)
 async def actions(request: Request):
     from sqlalchemy import select
+
     from app.database.engine import get_sessionmaker
     from app.database.models import Action
-    org_id = await _demo_org_id()
-    rows = []
-    if org_id:
-        async with get_sessionmaker()() as s:
-            rows = (await s.execute(select(Action).where(Action.org_id == org_id).order_by(Action.created_at.desc()))).scalars().all()
-            rows = [{"id": r.id, "title": r.title, "status": r.status, "verified_amount": r.verified_amount} for r in rows]
-    return templates.TemplateResponse(request, "pages/actions.html", _ctx("Actions", "actions", {"actions": rows}, request))
+
+    auth = await _require_org(request)
+    async with get_sessionmaker()() as s:
+        rows = (
+            await s.execute(
+                select(Action).where(Action.org_id == auth["org_id"]).order_by(Action.created_at.desc())
+            )
+        ).scalars().all()
+        rows = [
+            {"id": r.id, "title": r.title, "status": r.status, "verified_amount": r.verified_amount}
+            for r in rows
+        ]
+    return templates.TemplateResponse(
+        request, "pages/actions.html", _ctx("Actions", "actions", {"actions": rows}, request)
+    )
 
 
 @router.get("/evidence", response_class=HTMLResponse)
 async def evidence(request: Request):
     from sqlalchemy import select
+
     from app.database.engine import get_sessionmaker
     from app.database.models import Finding, FindingEvidence
-    org_id = await _demo_org_id()
-    evidences = []
-    packs = []
-    if org_id:
-        async with get_sessionmaker()() as s:
-            packs = (await s.execute(select(Finding).where(Finding.org_id == org_id).order_by(Finding.created_at.desc()).limit(20))).scalars().all()
-            packs = [{"id": r.id, "title": r.title, "kind": r.kind, "status": r.status, "pack": r.evidence_pack, "provenance": r.provenance} for r in packs]
-            evs = (await s.execute(select(FindingEvidence).order_by(FindingEvidence.created_at.desc()).limit(20))).scalars().all()
-            evidences = [{"id": e.id, "finding_id": e.finding_id, "kind": e.kind, "content": e.content} for e in evs]
-    return templates.TemplateResponse(request, "pages/evidence.html", _ctx("Evidence", "evidence", {"evidences": evidences, "packs": packs}, request))
+
+    auth = await _require_org(request)
+    async with get_sessionmaker()() as s:
+        packs = (
+            await s.execute(
+                select(Finding)
+                .where(Finding.org_id == auth["org_id"])
+                .order_by(Finding.created_at.desc())
+                .limit(20)
+            )
+        ).scalars().all()
+        packs = [
+            {
+                "id": r.id,
+                "title": r.title,
+                "kind": r.kind,
+                "status": r.status,
+                "exposure_amount": r.exposure_amount,
+                "pack": r.evidence_pack,
+                "provenance": r.provenance,
+            }
+            for r in packs
+        ]
+        evs = (
+            await s.execute(
+                select(FindingEvidence)
+                .join(Finding, FindingEvidence.finding_id == Finding.id)
+                .where(Finding.org_id == auth["org_id"])
+                .order_by(FindingEvidence.created_at.desc())
+                .limit(20)
+            )
+        ).scalars().all()
+        evidences = [
+            {"id": e.id, "finding_id": e.finding_id, "kind": e.kind, "content": e.content}
+            for e in evs
+        ]
+    return templates.TemplateResponse(
+        request,
+        "pages/evidence.html",
+        _ctx("Evidence", "evidence", {"evidences": evidences, "packs": packs}, request),
+    )
 
 
 @router.get("/integrations", response_class=HTMLResponse)
 async def integrations(request: Request):
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
+
+    from app.core.config import settings
     from app.database.engine import get_sessionmaker
     from app.database.models import RawRecord
     from app.integrations.crm.base import ADAPTERS
-    from app.core.config import settings
-    has_key = {"hubspot": bool(settings.hubspot_api_key), "salesforce": bool(settings.salesforce_client_id), "pipedrive": bool(settings.pipedrive_api_token), "twenty": bool(settings.twenty_crm_url), "gmail": bool(settings.gmail_client_id), "outlook": bool(settings.outlook_client_id)}
-    items = []
-    for k in ADAPTERS.keys():
-        items.append({"source": k, "status": "configured" if has_key.get(k) else "stub", "has_key": has_key.get(k)})
-    items += [{"source": "csv", "status": "ready", "has_key": True}, {"source": "upload", "status": "ready", "has_key": True}]
-    counts = {}
-    org_id = await _demo_org_id()
-    if org_id:
-        async with get_sessionmaker()() as s:
-            rows = (await s.execute(select(RawRecord.source, func.count(RawRecord.id)).where(RawRecord.org_id == org_id).group_by(RawRecord.source))).all()
-            counts = {r[0]: r[1] for r in rows}
-    return templates.TemplateResponse(request, "pages/integrations.html", _ctx("Integrations", "integrations", {"items": items, "counts": counts}, request))
+
+    auth = await _require_org(request)
+    has_key = {
+        "hubspot": bool(settings.hubspot_api_key),
+        "salesforce": bool(settings.salesforce_client_id),
+        "pipedrive": bool(settings.pipedrive_api_token),
+        "twenty": bool(settings.twenty_crm_url),
+        "gmail": bool(settings.gmail_client_id),
+        "outlook": bool(settings.outlook_client_id),
+    }
+    items = [
+        {"source": k, "status": "key set, sync 501" if has_key.get(k) else "no key, sync 501", "has_key": False}
+        for k in ADAPTERS
+    ]
+    items += [
+        {"source": "csv", "status": "ready", "has_key": True},
+        {"source": "upload", "status": "ready", "has_key": True},
+    ]
+    async with get_sessionmaker()() as s:
+        rows = (
+            await s.execute(
+                select(RawRecord.source, func.count(RawRecord.id))
+                .where(RawRecord.org_id == auth["org_id"])
+                .group_by(RawRecord.source)
+            )
+        ).all()
+        counts = {r[0]: r[1] for r in rows}
+    return templates.TemplateResponse(
+        request,
+        "pages/integrations.html",
+        _ctx("Integrations", "integrations", {"items": items, "counts": counts}, request),
+    )
+
+
+@router.post("/settings/members")
+async def settings_add_member(
+    request: Request, email: str = Form(...), role: str = Form("VIEWER")
+):
+    from sqlalchemy import select
+
+    from app.core.limits import check_org_limits
+    from app.database.engine import get_sessionmaker
+    from app.database.models import ALL_ROLES, Membership, User
+
+    auth = await _require_org(request)
+    if auth["role"] not in ("OWNER", "ADMIN"):
+        raise HTTPException(403, "Need OWNER/ADMIN")
+    if role not in ALL_ROLES:
+        raise HTTPException(400, f"Invalid role; use one of {ALL_ROLES}")
+    ok, err, _ = await check_org_limits(auth["org_id"], "users")
+    if not ok:
+        raise HTTPException(402, err)
+    async with get_sessionmaker()() as s:
+        user = (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(404, "User not found; they must register first")
+        existing = (
+            await s.execute(
+                select(Membership).where(
+                    Membership.user_id == user.id, Membership.org_id == auth["org_id"]
+                )
+            )
+        ).scalar_one_or_none()
+        if existing:
+            raise HTTPException(400, "User already in org")
+        s.add(Membership(org_id=auth["org_id"], user_id=user.id, role=role))
+        await s.commit()
+    return RedirectResponse(url="/settings", status_code=302)
 
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
-    from sqlalchemy import select, func
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Organization, Membership, User
+    from sqlalchemy import func, select
+
     from app.core.config import PLANS, settings
-    org_id = await _demo_org_id()
-    org = None
-    members = []
-    limits = {}
-    if org_id:
-        async with get_sessionmaker()() as s:
-            org = (await s.execute(select(Organization).where(Organization.id == org_id))).scalar_one_or_none()
-            if org:
-                mrows = (await s.execute(select(Membership).where(Membership.org_id == org_id))).scalars().all()
-                for m in mrows:
-                    u = (await s.execute(select(User).where(User.id == m.user_id))).scalar_one_or_none()
-                    members.append({"email": u.email if u else m.user_id[:8], "role": m.role, "active": m.is_active})
-                from app.database.models import Account, Finding
-                acct_cnt = (await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))).scalar() or 0
-                find_cnt = (await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))).scalar() or 0
-                limits = {"accounts": acct_cnt, "findings": find_cnt, "users": len(members)}
-                org = {"id": org.id, "name": org.name, "slug": org.slug} if org else None
-    return templates.TemplateResponse(request, "pages/settings.html", _ctx("Settings", "settings", {"org": org, "members": members, "plans": PLANS, "limits": limits, "app_url": settings.app_url, "studio_url": settings.supabase_studio_url}, request))
+    from app.core.limits import plan_for_org, plan_limits
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Account, Finding, Membership, Organization, User
+
+    auth = await _require_org(request)
+    async with get_sessionmaker()() as s:
+        org = await s.get(Organization, auth["org_id"])
+        mrows = (
+            await s.execute(select(Membership).where(Membership.org_id == auth["org_id"]))
+        ).scalars().all()
+        members = []
+        for m in mrows:
+            u = await s.get(User, m.user_id)
+            members.append({"email": u.email if u else m.user_id[:8], "role": m.role, "active": m.is_active})
+        acct_cnt = (
+            await s.execute(select(func.count(Account.id)).where(Account.org_id == auth["org_id"]))
+        ).scalar() or 0
+        find_cnt = (
+            await s.execute(select(func.count(Finding.id)).where(Finding.org_id == auth["org_id"]))
+        ).scalar() or 0
+        usage = {"accounts": acct_cnt, "findings": find_cnt, "users": len(members)}
+        plan = plan_for_org(org.extra_data if org else None)
+        plan_limits_data = plan_limits(plan)
+        org_data = {"id": org.id, "name": org.name, "slug": org.slug} if org else None
+    return templates.TemplateResponse(
+        request,
+        "pages/settings.html",
+        _ctx(
+            "Settings",
+            "settings",
+            {
+                "org": org_data,
+                "members": members,
+                "plans": PLANS,
+                "plan": plan,
+                "plan_limits": plan_limits_data,
+                "usage": usage,
+                "app_url": settings.app_url,
+                "studio_url": settings.supabase_studio_url,
+            },
+            request,
+        ),
+    )

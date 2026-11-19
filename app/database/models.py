@@ -305,6 +305,19 @@ class IntegrationEvent(Base):
     created_at: Mapped[datetime] = mapped_column(default=_now)
 
 
+class DealAuditJob(Base, TimestampMixin, OrgScopedMixin):
+    """Persistent deal-audit job: survives worker restarts and multi-worker polling."""
+
+    __tablename__ = "deal_audit_jobs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    opportunity_id: Mapped[str] = mapped_column(ForeignKey("opportunities.id", ondelete="CASCADE"), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="QUEUED")  # QUEUED|RUNNING|DONE|FAILED
+    result: Mapped[dict] = mapped_column(SA_JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    __table_args__ = (Index("ix_deal_audit_jobs_org_key", "org_id", "idempotency_key", unique=True),)
+
+
 class IntegrationOutbox(Base, TimestampMixin):
     """Transactional outbox — pending events for async publish to peer."""
 

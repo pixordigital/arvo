@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("ARVO starting — %s @ %s (Supabase Studio %s)", settings.app_name, settings.app_url, settings.supabase_studio_url)
+    if not settings.debug and settings.jwt_secret.startswith("change-me"):
+        raise RuntimeError("ARVO_JWT_SECRET must be set to a random value (openssl rand -hex 32)")
     # DB init lazy — don't fail startup if Supabase still booting
     try:
         from app.database.engine import init_db
@@ -57,6 +59,43 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Idempotency-Key"],
 )
+
+_RATE: dict[str, list[float]] = {}
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    return (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown"))
+
+
+@app.middleware("http")
+async def abuse_guard(request: Request, call_next):
+    """Rate-limit auth writes and reject cross-origin state changes (CSRF defence)."""
+    import time as _time
+
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin")
+        allowed = {settings.app_url.rstrip("/")}
+        if settings.cors_origins:
+            allowed |= {o.strip().rstrip("/") for o in settings.cors_origins.split(",") if o.strip()}
+        if origin and origin.rstrip("/") not in allowed:
+            return JSONResponse(status_code=403, content={"detail": "Cross-origin request rejected"})
+
+        auth_write = request.url.path.startswith("/api/v1/auth/") or request.url.path in ("/login", "/register")
+        if auth_write:
+            now = _time.time()
+            key = f"{_client_ip(request)}:{request.url.path}"
+            hits = [t for t in _RATE.get(key, []) if now - t < 60]
+            if len(hits) >= settings.rate_limit_per_minute:
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Too many requests; retry in a minute"},
+                    headers={"Retry-After": "60"},
+                )
+            hits.append(now)
+            _RATE[key] = hits
+    return await call_next(request)
+
 
 # Security headers
 @app.middleware("http")

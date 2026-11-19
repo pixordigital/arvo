@@ -3,24 +3,72 @@
 <div class="page-head">
   <span class="eyebrow">Org</span>
   <h1>Settings</h1>
-  <p class="page-sub">Tokens, domínios, membros. Segredos nunca renderizam valor real.</p>
+  <p class="page-sub">Organização, plano e membros reais desta conta. Valores vêm de `PLANS` e do banco.</p>
 </div>
-<section>
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 stagger">
-    {% for env in envs %}
-    <div class="card card-content">
-      <div class="integ-row mb-2">
-        <span class="stat-icon font-mono text-xs">{{ env.key[:3] }}</span>
-        <div><div class="font-medium t-fg font-mono text-sm">{{ env.key }}</div><div class="text-xs t-muted">{{ env.value_desc }}</div></div>
-      </div>
-      {% if env.is_secret %}<button class="copy-btn" disabled>Secret — masked</button>
-      {% else %}<button class="copy-btn pressable" onclick="copyEnv('{{ env.key }}')">Copy</button>{% endif %}
+
+<section aria-label="Organization">
+  <div class="card card-content mb-4">
+    <h2 class="card-title mb-3">Organização</h2>
+    {% if org %}
+    <div class="ledger-sheet">
+      <div class="ledger-row"><span class="k">Nome</span><span class="v">{{ org.name }}</span></div>
+      <div class="ledger-row"><span class="k">Slug</span><span class="v font-mono">{{ org.slug }}</span></div>
+      <div class="ledger-row"><span class="k">Plano</span><span class="v">{{ plan }}</span></div>
     </div>
-    {% endfor %}
+    {% else %}
+    <p class="t-muted">Organização não encontrada.</p>
+    {% endif %}
   </div>
 </section>
-<section class="mt-6 text-center">
-  <button class="btn btn-primary pressable" data-toast="Token regeneration em breve — via API">Regenerate API Token</button>
-  <p class="help mt-3">Ação sensível. Confirme no modal antes de revogar o token atual.</p>
+
+<section aria-label="Limits">
+  <div class="card card-content mb-4">
+    <h2 class="card-title mb-3">Uso contra o plano</h2>
+    <div class="plan-metrics">
+      <div class="plan-metric"><div class="stat-cap">Accounts</div><div class="v num">{{ usage.accounts }} / {{ plan_limits.max_accounts }}</div></div>
+      <div class="plan-metric"><div class="stat-cap">Findings</div><div class="v num">{{ usage.findings }} / {{ plan_limits.max_findings }}</div></div>
+      <div class="plan-metric"><div class="stat-cap">Users</div><div class="v num">{{ usage.users }} / {{ plan_limits.max_users }}</div></div>
+    </div>
+    <p class="help mt-3">Limites são aplicados no servidor em criação individual e importação em lote. Uma organização por conta hoje; multi-org não é oferecido.</p>
+  </div>
+</section>
+
+<section aria-label="Members">
+  <div class="card card-content mb-4">
+    <h2 class="card-title mb-3">Membros</h2>
+    <div class="table-wrap">
+      <table class="table table-zebra">
+        <thead><tr><th>Email</th><th>Role</th><th>Ativo</th></tr></thead>
+        <tbody>
+          {% for m in members %}
+          <tr><td>{{ m.email }}</td><td><span class="badge badge-default">{{ m.role }}</span></td><td>{{ 'sim' if m.active else 'não' }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <form class="form-stack mt-4" method="post" action="/settings/members">
+      <div class="field"><label for="member-email">Adicionar membro por email</label><input id="member-email" type="email" name="email" required class="input" placeholder="pessoa@empresa.com" /></div>
+      <div class="field"><label for="member-role">Role</label>
+        <select id="member-role" name="role" class="input">
+          <option value="VIEWER">VIEWER</option>
+          <option value="ANALYST">ANALYST</option>
+          <option value="OPERATOR">OPERATOR</option>
+          <option value="MANAGER">MANAGER</option>
+          <option value="ADMIN">ADMIN</option>
+        </select>
+      </div>
+      <p class="help">A pessoa precisa ter conta ARVO. O limite de users do plano é aplicado aqui.</p>
+      <button type="submit" class="btn btn-primary pressable">Adicionar</button>
+    </form>
+  </div>
+</section>
+
+<section aria-label="Environment">
+  <div class="card card-content">
+    <h2 class="card-title mb-3">Conexões</h2>
+    <div class="ledger-row"><span class="k">App URL</span><span class="v font-mono">{{ app_url }}</span></div>
+    <div class="ledger-row"><span class="k">Supabase Studio</span><span class="v font-mono">{{ studio_url }}</span></div>
+    <p class="help mt-3">Segredos são injetados por variável de ambiente e nunca renderizados.</p>
+  </div>
 </section>
 {% endblock %}

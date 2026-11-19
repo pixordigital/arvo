@@ -10,28 +10,27 @@ from app.api.deps import get_current_user
 from app.core.limits import check_org_limits
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 @router.post("/csv")
 async def ingest_csv(file: UploadFile = File(...), ctx=Depends(get_current_user)):
     data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Upload exceeds 5 MB")
     text = data.decode("utf-8", errors="ignore")
     reader = csv.DictReader(io.StringIO(text))
     rows = list(reader)
-    # limit check before bulk create — estimate
-    ok, err, usage = await check_org_limits(ctx["membership"].org_id, "accounts")
-    if not ok and len(rows) > 0: raise HTTPException(402, err)
-    # also check projected count vs limit
-    from app.core.config import PLANS
-    from app.core.limits import plan_for_org, plan_limits
+    valid = [r for r in rows if (r.get("name") or r.get("account_name") or r.get("company"))]
+    ok, err, usage = await check_org_limits(ctx["membership"].org_id, "accounts", delta=len(valid))
+    if not ok and valid: raise HTTPException(402, err)
     async with get_sessionmaker()() as s:
         raw = RawRecord(org_id=ctx["membership"].org_id, source="CSV", source_id=file.filename, payload={"rows": rows, "filename": file.filename}, status="PENDING")
         s.add(raw)
-        # Normalize → canonical (minimal): create accounts from rows with name/domain
+        # Normalize → canonical: create accounts from rows with a name
         created=0
-        for r in rows:
+        for r in valid:
             name = r.get("name") or r.get("account_name") or r.get("company")
-            if not name: continue
-            a = Account(org_id=ctx["membership"].org_id, name=name.strip(), domain=r.get("domain"), type="CUSTOMER", owner_id=ctx["user"].id, extra_data={"ingest":"csv","raw":r})
+            a = Account(org_id=ctx["membership"].org_id, name=name.strip()[:255], domain=(r.get("domain") or "").strip()[:255] or None, type="CUSTOMER", owner_id=ctx["user"].id, extra_data={"ingest":"csv","raw":r})
             s.add(a); created+=1
         raw.status="NORMALIZED"
         await s.commit()
@@ -40,6 +39,8 @@ async def ingest_csv(file: UploadFile = File(...), ctx=Depends(get_current_user)
 @router.post("/upload")
 async def ingest_upload(file: UploadFile = File(...), ctx=Depends(get_current_user)):
     data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Upload exceeds 5 MB")
     async with get_sessionmaker()() as s:
         raw = RawRecord(org_id=ctx["membership"].org_id, source="UPLOAD", source_id=file.filename, payload={"filename": file.filename, "size": len(data), "content_type": file.content_type}, status="PENDING")
         s.add(raw); await s.commit()

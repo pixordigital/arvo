@@ -19,8 +19,7 @@ class OpenRouterProvider(AIProvider):
 
     async def generate(self, prompt: str, system: str = "", model: str | None = None, temperature: float = 0.2) -> dict:
         if not self.api_key:
-            # Mock for MVP without key — deterministic stub, Python will validate
-            return {"content": f"[MOCK OpenRouter] {prompt[:200]}", "model": model or "mock", "usage": {"prompt_tokens": 0, "completion_tokens": 0}, "mock": True}
+            raise RuntimeError("LLM not configured: ARVO_OPENROUTER_API_KEY is empty")
         model = model or "openai/gpt-4o-mini"
         msgs = []
         if system: msgs.append({"role":"system","content": system})
@@ -37,15 +36,12 @@ class OpenRouterProvider(AIProvider):
         # Pydantic-contracted extraction via JSON mode
         sys = f"Extract JSON matching schema {schema}. Return only JSON."
         res = await self.generate(f"Text:\n{text}\n\nSchema:{schema}", system=sys, model=model, temperature=0)
-        # If mock, return empty per schema keys
-        if res.get("mock"):
-            return {k: None for k in schema.get("properties", {}).keys()}
         import json as _json
         try: return _json.loads(res["content"])
         except Exception: return {"raw": res["content"]}
 
 def get_provider(name: str | None = None) -> AIProvider:
     name = (name or settings.llm_provider).lower()
-    if name == "openrouter": return OpenRouterProvider()
-    # Future: OpenAIProvider, AnthropicProvider, GeminiProvider share same interface
-    return OpenRouterProvider()
+    if name == "openrouter":
+        return OpenRouterProvider()
+    raise RuntimeError(f"LLM provider '{name}' not implemented (supported: openrouter)")

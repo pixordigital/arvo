@@ -18,4 +18,5 @@ USER appuser
 EXPOSE 9777
 HEALTHCHECK --interval=15s --timeout=10s --start-period=90s --retries=10 CMD curl -sf http://localhost:9777/health/live || exit 1
 STOPSIGNAL SIGTERM
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["gunicorn", "app.main:app", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:9777", "--workers", "2", "--timeout", "120", "--keep-alive", "5", "--access-logfile", "-", "--error-logfile", "-", "--forwarded-allow-ips", "*"]

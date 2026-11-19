@@ -1,11 +1,12 @@
 """ARVO — Opportunities API."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.database.engine import get_sessionmaker
-from app.database.models import Opportunity, Account
+from app.database.models import OPP_STAGES, Opportunity, Account
 from app.api.deps import get_current_user
+from app.services.financial import D, money
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -15,6 +16,41 @@ class OppIn(BaseModel):
     stage: str = "PROSPECTING"
     amount: str = "0"
     currency: str = "BRL"
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name required")
+        return v[:255]
+
+    @field_validator("stage")
+    @classmethod
+    def valid_stage(cls, v: str) -> str:
+        v = v.strip().upper()
+        if v not in OPP_STAGES:
+            raise ValueError(f"stage must be one of {OPP_STAGES}")
+        return v
+
+    @field_validator("amount")
+    @classmethod
+    def non_negative_amount(cls, v: str) -> str:
+        try:
+            amount = D(v)
+        except Exception as e:
+            raise ValueError("amount must be a decimal number") from e
+        if amount < 0:
+            raise ValueError("amount must be >= 0")
+        return money(amount)
+
+    @field_validator("currency")
+    @classmethod
+    def valid_currency(cls, v: str) -> str:
+        v = v.strip().upper()
+        if len(v) != 3 or not v.isalpha():
+            raise ValueError("currency must be a 3-letter code")
+        return v
 
 @router.get("")
 async def list_opps(ctx=Depends(get_current_user)):

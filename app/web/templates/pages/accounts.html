@@ -11,6 +11,25 @@
   </nav>
 </div>
 <section>
+  <form class="card card-content form-stack mb-4" method="post" action="/accounts">
+    <h2 class="card-title">Nova conta</h2>
+    <div class="field"><label for="acc-name">Nome</label><input id="acc-name" name="name" required class="input" placeholder="Acme Ltda" /></div>
+    <div class="field"><label for="acc-domain">Domínio</label><input id="acc-domain" name="domain" class="input" placeholder="acme.com" /></div>
+    <div class="field"><label for="acc-type">Tipo</label>
+      <select id="acc-type" name="type" class="input">
+        <option value="CUSTOMER">CUSTOMER</option>
+        <option value="PROSPECT">PROSPECT</option>
+        <option value="PARTNER">PARTNER</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary pressable">Criar conta</button>
+  </form>
+  <form class="card card-content form-stack mb-4" method="post" action="/accounts/import" enctype="multipart/form-data">
+    <h2 class="card-title">Importar CSV</h2>
+    <p class="help">Colunas aceitas: `name` (ou `account_name`/`company`), `domain`. Limite do plano é aplicado ao lote.</p>
+    <input type="file" name="file" accept=".csv,text/csv" required class="input" />
+    <button type="submit" class="btn btn-secondary pressable">Importar</button>
+  </form>
   <div class="table-wrap elev-1">
     <table class="table table-mobile-card table-sticky table-zebra">
       <caption>Contas · filtro: {{ type_filter or 'todas' }}</caption>
@@ -22,7 +41,7 @@
           <td data-label="Nome" class="t-fg font-medium">{{ a.name }}</td>
           <td data-label="Domain" class="t-muted font-mono">{{ a.domain or '—' }}</td>
           <td data-label="Tipo"><span class="badge {% if a.type=='CUSTOMER' %}badge-success{% else %}badge-default{% endif %}"><span class="dot"></span>{{ a.type or 'CUSTOMER' }}</span></td>
-          <td data-label="Ações"><div class="flex gap-3"><a href="/api/v1/accounts/{{ a.id }}" class="row-link">Ver</a><a href="/api/v1/accounts/{{ a.id }}/contacts" class="row-link">Contatos</a></div></td>
+          <td data-label="Ações"><span class="t-muted text-xs font-mono">{{ a.id[:8] }}</span></td>
         </tr>
         {% endfor %}
       </tbody>
