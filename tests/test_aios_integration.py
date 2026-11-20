@@ -215,3 +215,34 @@ async def test_outbox_single_flush_records_failed_attempts(monkeypatch):
     finally:
         settings.aios_integration_enabled = enabled
         settings.aios_base_url = base_url
+
+
+async def test_list_deals_client(monkeypatch):
+    from app.core.config import settings
+    from app.integrations.aios import client
+
+    class FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"org_id": "org-1", "deals": [{"id": "d1", "lead_name": "X"}], "count": 1}
+
+    async def fake_request(method, path, **kw):
+        assert method == "GET"
+        assert "org_id=org-1" in path
+        return FakeResp()
+
+    monkeypatch.setattr(client, "_request_with_retry", fake_request)
+    settings.aios_base_url = "http://aios.test"
+    settings.aios_service_key_id = "kid-1"
+    settings.aios_service_key = "secret-1"
+    settings.aios_integration_enabled = True
+
+    out = await client.list_deals("org-1", limit=5)
+    assert out["count"] == 1
+    assert out["deals"][0]["id"] == "d1"
+
+    # empty org -> no request
+    out2 = await client.list_deals("")
+    assert out2["count"] == 0
