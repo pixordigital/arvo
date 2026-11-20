@@ -79,3 +79,14 @@ async def send_event(
     )
     r.raise_for_status()
     return r.json()
+
+
+async def list_deals(org_id: str, limit: int = 100) -> dict:
+    """GET /deals from peer AIOS (CRM single source of truth)."""
+    if not org_id:
+        return {"org_id": None, "deals": [], "count": 0}
+    path = "/api/v1/integrations/aios/v1/deals"
+    url = f"{path}?org_id={org_id}&limit={int(limit)}"
+    r = await _request_with_retry("GET", url, headers=_headers("GET", path))
+    r.raise_for_status()
+    return r.json()

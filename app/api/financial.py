@@ -204,4 +204,27 @@ async def create_finding(inp: FindingIn, ctx=Depends(get_current_user)):
         s.add(f); await s.flush()
         fe=FinancialEvent(org_id=ctx["membership"].org_id, kind="RISK_EXPOSURE", amount=inp.exposure_amount, currency=inp.currency, idempotency_key=idempotency_key(ctx["membership"].org_id,"finding",f.id))
         s.add(fe); await s.commit(); await s.refresh(f)
+        # Bridge to AIOS: a new finding is a commitment at risk -> AIOS agent acts.
+        try:
+            from app.core.config import settings as _s
+            if getattr(_s, "aios_integration_enabled", False):
+                from app.integrations.aios.publisher import enqueue_outbox
+                await enqueue_outbox(
+                    "commitment.at_risk",
+                    {
+                        "org_id": ctx["membership"].org_id,
+                        "finding_id": f.id,
+                        "kind": f.kind,
+                        "title": f.title,
+                        "severity": f.severity,
+                        "exposure_amount": f.exposure_amount,
+                        "currency": f.currency,
+                        "confidence": f.confidence,
+                    },
+                    business_trace_id=f.id,
+                    idempotency_key=f.id,
+                )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug("aios outbox enqueue skipped: %s", e)
         return {"id": f.id, "status": f.status}
