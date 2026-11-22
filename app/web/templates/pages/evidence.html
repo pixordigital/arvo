@@ -11,7 +11,7 @@
       <h2 class="card-title mb-3">Findings com packs <span class="t-muted font-mono text-xs">· {{ packs|length }} de {{ total }}</span></h2>
       <div class="table-wrap elev-1">
         <table class="table table-mobile-card table-sticky table-zebra">
-          <thead><tr><th>ID</th><th>Título</th><th>Tipo</th><th>Status</th><th class="num">Exposição</th></tr></thead>
+          <thead><tr><th>ID</th><th>Título</th><th>Tipo</th><th>Status</th><th class="num">Exposição</th><th>Rastreio</th></tr></thead>
           <tbody>
             {% for f in packs %}
             <tr>
@@ -20,6 +20,7 @@
               <td data-label="Tipo"><span class="badge badge-default">{{ f.kind }}</span></td>
               <td data-label="Status"><span class="badge badge-outline">{{ f.status }}</span></td>
               <td data-label="Exposição" class="num t-fg">R$ {{ f.exposure_amount or '—' }}</td>
+              <td data-label="Rastreio">{% if f.trace %}<span class="badge badge-outline font-mono text-xs" title="AIOS business trace">{{ f.trace }}</span>{% else %}<span class="t-muted">—</span>{% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -30,13 +31,14 @@
       <h2 class="card-title mb-3">Evidências <span class="t-muted font-mono text-xs">· página atual</span></h2>
       <div class="table-wrap elev-1">
         <table class="table table-mobile-card table-zebra">
-          <thead><tr><th>ID</th><th>Kind</th><th>Finding</th></tr></thead>
+          <thead><tr><th>ID</th><th>Kind</th><th>Finding</th><th>Rastreio</th></tr></thead>
           <tbody>
             {% for e in evidences %}
             <tr>
               <td data-label="ID" class="font-mono t-muted">{{ e.id[:8] }}</td>
               <td data-label="Kind"><span class="badge badge-default">{{ e.kind }}</span></td>
               <td data-label="Finding"><span class="t-muted text-xs font-mono">Finding {{ e.finding_id[:8] }}</span></td>
+              <td data-label="Rastreio">{% if e.trace %}<span class="badge badge-outline font-mono text-xs" title="AIOS business trace">{{ e.trace }}</span>{% else %}<span class="t-muted">—</span>{% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>

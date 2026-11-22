@@ -38,6 +38,21 @@ def _brl(value) -> str:
     return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _trace_id(*sources: dict | None) -> str | None:
+    """Read stored AIOS business_trace_id from provenance / evidence_pack / evidence content."""
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        trace = src.get("business_trace_id")
+        if not trace:
+            nested = src.get("payload")
+            if isinstance(nested, dict):
+                trace = nested.get("business_trace_id")
+        if trace:
+            return str(trace)
+    return None
+
+
 _PT_MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
 
@@ -337,6 +352,7 @@ async def findings(request: Request):
                 "severity": r.severity,
                 "exposure": r.exposure_amount,
                 "currency": r.currency,
+                "trace": _trace_id(r.provenance, r.evidence_pack),
             }
             for r in rows
         ]
@@ -655,6 +671,7 @@ async def evidence(request: Request):
                 "exposure_amount": r.exposure_amount,
                 "pack": r.evidence_pack,
                 "provenance": r.provenance,
+                "trace": _trace_id(r.provenance, r.evidence_pack),
             }
             for r in packs
         ]
@@ -669,7 +686,13 @@ async def evidence(request: Request):
             )
         ).scalars().all()
         evidences = [
-            {"id": e.id, "finding_id": e.finding_id, "kind": e.kind, "content": e.content}
+            {
+                "id": e.id,
+                "finding_id": e.finding_id,
+                "kind": e.kind,
+                "content": e.content,
+                "trace": _trace_id(e.content),
+            }
             for e in evs
         ]
     return templates.TemplateResponse(

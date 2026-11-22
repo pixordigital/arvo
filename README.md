@@ -35,8 +35,23 @@ Sem Docker (dev local) o padrão é SQLite (`sqlite+aiosqlite:///./arvo.db`); de
 - Service: `arvo-supabase` (`r4afp9igrytbuir563nsbqem`) — Studio exposto 9771:3000
 - App `l7p2wj6ysqcnnymtynr08up1`: build nixpacks, `ports_exposes 9777:9777`, env vars do `.env.example`
 - DSN prod usa host `arvo-db-bridge:5432` (socat → `supabase-db-r4afp9igrytbuir563nsbqem:5432`); Redis prod `arvo-redis-1:6379` na rede `coolify`.
-- Sem worker arq no Coolify: outbox é drenada por tarefa agendada `arvo-outbox-flush` (1/min) e reconciliação de deals por `arvo-reconcile`. `ARVO_USE_ARQ_WORKER=true` reativa enqueue imediato quando worker existir.
-- `ARVO_AIOS_ALLOWED_ORGS` (opcional, CSV de ids/slugs) restringe orgs AIOS com escrita/SSO permitida.
+- Sem worker arq no Coolify: flush da outbox depende de trigger externo (tarefa agendada `arvo-outbox-flush` ou `POST /api/v1/integrations/aios/v1/outbox/flush`); agendamento no Coolify é passo manual, não versionado neste repo. `ARVO_USE_ARQ_WORKER=true` reativa enqueue imediato quando worker existir.
+- `ARVO_AIOS_ALLOWED_ORGS` (opcional, CSV de ids/slugs) restringe orgs AIOS com escrita/SSO permitida; vazio = sem restrição.
+
+## AIOS integration
+
+Integração service-to-service, desligada por padrão (`ARVO_AIOS_INTEGRATION_ENABLED=false`; rotas fechadas retornam 404). Variáveis obrigatórias no ambiente (via Coolify/manual — nunca versionar segredos reais):
+
+- `ARVO_AIOS_INTEGRATION_ENABLED` — `true` liga as rotas; `false` mantém comportamento anterior.
+- `ARVO_AIOS_BASE_URL` — base URL da AIOS (ex.: `http://aios:8000`); sem ela o cliente falha.
+- `ARVO_AIOS_SERVICE_KEY_ID` — id da chave de serviço.
+- `ARVO_AIOS_SERVICE_KEY` — segredo compartilhado; gere com `openssl rand -hex 32`.
+- `ARVO_AIOS_ALLOWED_ORGS` — CSV opcional de ids/slugs de orgs AIOS com escrita/SSO permitidos; vazio = sem restrição.
+- `ARVO_REDIS_URL` — Redis para enqueue/worker; sem Redis, `/agent-executions` responde 503.
+
+Endpoints assinados sob `/api/v1/integrations/aios/v1/*`: `GET` e `POST /health`, `POST /agent-executions`, `GET /executions/{id}`, `POST /events`, `POST /outbox/flush`, `POST /sso-ticket`. Auth de serviço é HMAC-SHA256 com `X-Service-Key-Id`, `X-Service-Timestamp`, `X-Service-Nonce` e `X-Service-Signature` sobre método + path + hash SHA-256 do corpo; nonce é deduplicado em cache e na tabela `integration_nonces`. Tipos de evento não suportados em `POST /events` são rejeitados com HTTP 400.
+
+Migrations Alembic rodam no entrypoint da imagem (ou no serviço `migrate` do compose); injeção de env/keys e agendamento de flush externo no Coolify são passos manuais. O código fornece apenas endpoints, outbox e cron do worker.
 
 ## Supabase Studio
 
@@ -54,5 +69,5 @@ Principio verdade: limites só de `app/core/config.py:PLANS` + `app/core/limits.
 - Rate limit de login/cadastro usa Redis (`INCR` + `EXPIRE`, chave por IP+rota) quando acessível; se o Redis cair, cai para contador em memória por processo.
 - Adaptadores CRM/e-mail respondem 501 (não implementados); entrada real hoje é CSV e upload.
 - Execução de action registra a transição de estado; sem integração ligada, nenhuma chamada externa.
-- Integração AIOS ↔ ARVO é flag-gated: `ARVO_AIOS_INTEGRATION_ENABLED=false` por padrão; endpoints `/api/integrations/aios/v1/*` exigem HMAC + nonce e o outbox só publica com a flag ligada.
+- Integração AIOS ↔ ARVO é flag-gated: `ARVO_AIOS_INTEGRATION_ENABLED=false` por padrão; endpoints `/api/v1/integrations/aios/v1/*` exigem HMAC + nonce e o outbox só publica com a flag ligada.
 - Control Center lê dados reais da org: `exposure` = soma de `finding.exposure_amount`; `verified` = soma de `financial_ledger` com `entry_type='VERIFIED'` (recuperação comprovada). Sem org, zeros — sem demo ou estimativa.

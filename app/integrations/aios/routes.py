@@ -24,6 +24,7 @@ _PROCESSING_TTL = 60
 _MAX_EVENTS = 1000
 _MAX_NONCES = 1000
 _MAX_NONCE_LEN = 64
+_ALLOWED_EVENT_TYPES = frozenset({"agent.action.completed", "deal.created", "deal.stage_changed"})
 
 
 def _prune_nonce_cache() -> None:
@@ -302,6 +303,13 @@ async def create_agent_execution(body: AgentExecutionRequest):
                 await session.commit()
         raise HTTPException(503, "Audit queue unavailable")
 
+    response["job_id"] = job_id
+    async with get_sessionmaker()() as session:
+        stored = await session.get(IntegrationEvent, exec_id)
+        if stored:
+            stored.response = response
+            await session.commit()
+
     _store_idempotent(exec_id, response)
     return {**response, "event_version": "1"}
 
@@ -309,13 +317,31 @@ async def create_agent_execution(body: AgentExecutionRequest):
 @router.get("/executions/{exec_id}", dependencies=[Depends(_require_auth)])
 async def get_execution(exec_id: str):
     cached = _get_idempotent(exec_id)
-    if cached is not None:
+    if cached is None:
+        cached = await _db_get_event(exec_id)
+        if cached is not None:
+            _store_idempotent(exec_id, cached)
+    if cached is None:
+        raise HTTPException(404, "Execution not found")
+
+    job_id = cached.get("job_id")
+    if not job_id:
         return cached
-    db_cached = await _db_get_event(exec_id)
-    if db_cached is not None:
-        _store_idempotent(exec_id, db_cached)
-        return db_cached
-    raise HTTPException(404, "Execution not found")
+
+    from app.database.engine import get_sessionmaker
+    from app.database.models import DealAuditJob
+
+    async with get_sessionmaker()() as session:
+        job = await session.get(DealAuditJob, job_id)
+        if job is None:
+            return cached
+        status = {
+            "QUEUED": "queued",
+            "RUNNING": "running",
+            "DONE": "completed",
+            "FAILED": "failed",
+        }.get(job.status, cached.get("status", "queued"))
+        return {**cached, "status": status, "result": job.result, "error": job.error}
 
 
 async def _handle_agent_action_completed(payload: dict, trace_id: str | None) -> dict:
@@ -544,6 +570,8 @@ async def ingest_event(
 ):
     if not idempotency_key or len(idempotency_key) > 128:
         raise HTTPException(400, "Invalid Idempotency-Key")
+    if body.type not in _ALLOWED_EVENT_TYPES:
+        raise HTTPException(400, f"Unsupported event type: {body.type}")
     cached = _get_idempotent(idempotency_key)
     if cached is not None:
         return {**cached, "deduplicated": True}

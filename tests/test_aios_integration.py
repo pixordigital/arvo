@@ -161,7 +161,7 @@ def test_events_idempotency():
         _clear_nonces()
         _clear_events()
         path = "/api/v1/integrations/aios/v1/events"
-        body = json.dumps({"type": "test.event", "payload": {"a": 1}}, separators=(",", ":")).encode()
+        body = json.dumps({"type": "agent.action.completed", "payload": {"a": 1}}, separators=(",", ":")).encode()
         hdr = sign_request("POST", path, body, "kid-1", "secret-1")
         idem_key = uuid.uuid4().hex
         hdr["Idempotency-Key"] = idem_key
@@ -179,6 +179,206 @@ def test_events_idempotency():
         settings.aios_service_key = orig_key
         _clear_nonces()
         _clear_events()
+
+
+async def test_agent_execution_status_tracks_deal_audit_job(monkeypatch):
+    """Execution GET follows DealAuditJob status, not the cached queued snapshot."""
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete
+
+    from app.core.config import settings
+    from app.database.engine import get_sessionmaker
+    from app.database.models import (
+        Account,
+        DealAuditJob,
+        IntegrationEvent,
+        IntegrationNonce,
+        Opportunity,
+        Organization,
+    )
+    from app.integrations.aios.routes import _clear_events
+    from app.main import app
+
+    org_id = f"org-exec-{uuid.uuid4().hex[:8]}"
+    account_id = f"acc-exec-{uuid.uuid4().hex[:8]}"
+    opp_id = f"opp-exec-{uuid.uuid4().hex[:8]}"
+    job_id = f"job-exec-{uuid.uuid4().hex}"
+    nonces: list[str] = []
+    exec_id = legacy_id = None
+
+    async def fake_enqueue(opportunity_id, org_id, prompt_version="v1"):
+        assert opportunity_id == opp_id
+        return job_id
+
+    monkeypatch.setattr("app.workers.runner.enqueue_audit", fake_enqueue)
+    orig = (
+        settings.aios_integration_enabled,
+        settings.aios_service_key_id,
+        settings.aios_service_key,
+    )
+    c = TestClient(app)
+    try:
+        settings.aios_integration_enabled = True
+        settings.aios_service_key_id = "kid-exec"
+        settings.aios_service_key = "secret-exec"
+        _clear_nonces()
+        _clear_events()
+
+        async with get_sessionmaker()() as session:
+            session.add(Organization(id=org_id, name="Exec Org", slug=org_id))
+            session.add(Account(id=account_id, org_id=org_id, name="Exec Account"))
+            session.add(
+                Opportunity(id=opp_id, org_id=org_id, account_id=account_id, name="Exec Opp")
+            )
+            session.add(
+                DealAuditJob(
+                    id=job_id,
+                    org_id=org_id,
+                    opportunity_id=opp_id,
+                    idempotency_key=f"exec-test:{job_id}",
+                    status="QUEUED",
+                )
+            )
+            await session.commit()
+
+        create_path = "/api/v1/integrations/aios/v1/agent-executions"
+        body = json.dumps({"opportunity_id": opp_id, "action": "audit"}, separators=(",", ":")).encode()
+        hdr = sign_request("POST", create_path, body, "kid-exec", "secret-exec")
+        nonces.append(hdr["X-Service-Nonce"])
+        hdr["Content-Type"] = "application/json"
+        r = c.post(create_path, content=body, headers=hdr)
+        assert r.status_code == 200, r.text
+        created = r.json()
+        exec_id = created["id"]
+        assert created["status"] == "queued"
+        assert created["job_id"] == job_id
+
+        def get_execution(target_id):
+            path = f"/api/v1/integrations/aios/v1/executions/{target_id}"
+            h = sign_request("GET", path, None, "kid-exec", "secret-exec")
+            nonces.append(h["X-Service-Nonce"])
+            return c.get(path, headers=h).json()
+
+        assert get_execution(exec_id)["status"] == "queued"
+
+        async with get_sessionmaker()() as session:
+            job = await session.get(DealAuditJob, job_id)
+            job.status = "RUNNING"
+            await session.commit()
+        assert get_execution(exec_id)["status"] == "running"
+
+        async with get_sessionmaker()() as session:
+            job = await session.get(DealAuditJob, job_id)
+            job.status = "DONE"
+            job.result = {"exposure": "42.00"}
+            await session.commit()
+        done = get_execution(exec_id)
+        assert done["status"] == "completed"
+        assert done["result"] == {"exposure": "42.00"}
+
+        async with get_sessionmaker()() as session:
+            job = await session.get(DealAuditJob, job_id)
+            job.status = "FAILED"
+            job.error = "boom"
+            await session.commit()
+        failed = get_execution(exec_id)
+        assert failed["status"] == "failed"
+        assert failed["error"] == "boom"
+
+        legacy_id = f"legacy-{uuid.uuid4().hex}"
+        async with get_sessionmaker()() as session:
+            session.add(
+                IntegrationEvent(
+                    idempotency_key=legacy_id,
+                    peer="aios",
+                    type="agent.execution",
+                    payload={},
+                    response={"id": legacy_id, "status": "queued"},
+                    expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1),
+                )
+            )
+            await session.commit()
+        assert get_execution(legacy_id)["status"] == "queued"
+    finally:
+        (
+            settings.aios_integration_enabled,
+            settings.aios_service_key_id,
+            settings.aios_service_key,
+        ) = orig
+        _clear_nonces()
+        _clear_events()
+        async with get_sessionmaker()() as session:
+            for key in (exec_id, legacy_id):
+                if key:
+                    row = await session.get(IntegrationEvent, key)
+                    if row:
+                        await session.delete(row)
+            job = await session.get(DealAuditJob, job_id)
+            if job:
+                await session.delete(job)
+            await session.execute(delete(Opportunity).where(Opportunity.org_id == org_id))
+            await session.execute(delete(Account).where(Account.org_id == org_id))
+            await session.execute(delete(Organization).where(Organization.id == org_id))
+            for nonce in nonces:
+                await session.execute(
+                    delete(IntegrationNonce).where(IntegrationNonce.nonce == nonce)
+                )
+            await session.commit()
+
+
+async def test_ingest_event_rejects_unknown_type_before_claim():
+    import json
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete
+
+    from app.core.config import settings
+    from app.database.engine import get_sessionmaker
+    from app.database.models import IntegrationEvent, IntegrationNonce
+    from app.integrations.aios.routes import _clear_events
+    from app.main import app
+
+    path = "/api/v1/integrations/aios/v1/events"
+    body = json.dumps({"type": "unknown.event", "payload": {}}, separators=(",", ":")).encode()
+    idem_key = uuid.uuid4().hex
+    hdr = sign_request("POST", path, body, "kid-bad", "secret-bad")
+    nonce = hdr["X-Service-Nonce"]
+    hdr["Idempotency-Key"] = idem_key
+    hdr["Content-Type"] = "application/json"
+
+    orig = (
+        settings.aios_integration_enabled,
+        settings.aios_service_key_id,
+        settings.aios_service_key,
+    )
+    c = TestClient(app)
+    try:
+        settings.aios_integration_enabled = True
+        settings.aios_service_key_id = "kid-bad"
+        settings.aios_service_key = "secret-bad"
+        _clear_nonces()
+        _clear_events()
+        r = c.post(path, content=body, headers=hdr)
+        assert r.status_code == 400
+        assert "Unsupported event type" in r.json()["detail"]
+        async with get_sessionmaker()() as session:
+            assert await session.get(IntegrationEvent, idem_key) is None
+    finally:
+        (
+            settings.aios_integration_enabled,
+            settings.aios_service_key_id,
+            settings.aios_service_key,
+        ) = orig
+        _clear_nonces()
+        _clear_events()
+        async with get_sessionmaker()() as session:
+            await session.execute(
+                delete(IntegrationNonce).where(IntegrationNonce.nonce == nonce)
+            )
+            await session.commit()
 
 
 async def test_outbox_enqueues_in_existing_transaction():
