@@ -1,29 +1,11 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-arvo}
-      POSTGRES_USER: ${POSTGRES_USER:-arvo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arvo} -d ${POSTGRES_DB:-arvo}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-
   migrate:
     build: .
     command: ["alembic", "upgrade", "head"]
     env_file: .env
     environment:
       ARVO_SKIP_MIGRATIONS: "1"
-      ARVO_DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-arvo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-arvo}"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      ARVO_DATABASE_URL: "${ARVO_DATABASE_URL:?Set ARVO_DATABASE_URL to Supabase Postgres DSN}"
     restart: "no"
 
   redis:
@@ -46,10 +28,8 @@ services:
     environment:
       ARVO_SKIP_MIGRATIONS: "1"
       ARVO_REDIS_URL: "redis://:${ARVO_REDIS_PASSWORD:-changeme}@redis:6379/0"
-      ARVO_DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-arvo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-arvo}"
+      ARVO_DATABASE_URL: "${ARVO_DATABASE_URL:?Set ARVO_DATABASE_URL to Supabase Postgres DSN}"
     depends_on:
-      postgres:
-        condition: service_healthy
       migrate:
         condition: service_completed_successfully
       redis:
@@ -65,10 +45,8 @@ services:
     environment:
       ARVO_SKIP_MIGRATIONS: "1"
       ARVO_REDIS_URL: "redis://:${ARVO_REDIS_PASSWORD:-changeme}@redis:6379/0"
-      ARVO_DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-arvo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-arvo}"
+      ARVO_DATABASE_URL: "${ARVO_DATABASE_URL:?Set ARVO_DATABASE_URL to Supabase Postgres DSN}"
     depends_on:
-      postgres:
-        condition: service_healthy
       migrate:
         condition: service_completed_successfully
       redis:
@@ -76,5 +54,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres-data:
   redis-data:

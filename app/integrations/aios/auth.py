@@ -13,7 +13,7 @@ import time
 _PATH = "/api/integrations"
 _CLOCK_SKEW = 300  # segundos de tolerância de timestamp
 
-# ponytail: in-memory nonce dedup; upgrade para DB processed-events se cross-instance
+# Cache-only dedup; IntegrationNonce DB is authority and rejects cross-replica replay.
 _seen_nonces: dict[str, float] = {}
 _lock = threading.Lock()
 

@@ -20,13 +20,6 @@ async def lifespan(app: FastAPI):
     logger.info("ARVO starting — %s @ %s (Supabase Studio %s)", settings.app_name, settings.app_url, settings.supabase_studio_url)
     if not settings.debug and settings.jwt_secret.startswith("change-me"):
         raise RuntimeError("ARVO_JWT_SECRET must be set to a random value (openssl rand -hex 32)")
-    # DB init lazy — don't fail startup if Supabase still booting
-    try:
-        from app.database.engine import init_db
-        await init_db()
-        logger.info("DB init ok")
-    except Exception as e:
-        logger.warning("DB init deferred: %s", e)
     yield
     logger.info("ARVO shutting down")
 
@@ -164,27 +157,33 @@ async def health_live():
 async def health_ready():
     checks: dict = {}
     ok = True
-    # DB check
-    try:
-        from app.database.engine import check_db
-        checks["db"] = "ok" if await check_db() else "down"
-        if checks["db"] != "ok":
-            ok = False
-    except Exception as e:
-        checks["db"] = f"error: {e}"
+    if not settings.debug and settings.is_sqlite:
+        checks["db"] = "rejected: sqlite dialect with debug=false"
         ok = False
-    # Redis optional
+    else:
+        try:
+            from app.database.engine import check_db
+            checks["db"] = "ok" if await check_db() else "down"
+            if checks["db"] != "ok":
+                ok = False
+        except Exception as e:
+            checks["db"] = f"error: {e}"
+            ok = False
     try:
         import redis.asyncio as aioredis
         if settings.redis_url:
             r = aioredis.from_url(settings.redis_url, socket_connect_timeout=2)
-            await r.ping()
-            await r.aclose()
-            checks["redis"] = "ok"
+            try:
+                await r.ping()
+                checks["redis"] = "ok"
+            finally:
+                await r.aclose()
         else:
             checks["redis"] = "not_configured"
+            ok = False
     except Exception as e:
-        checks["redis"] = f"fallback: {e}"
+        checks["redis"] = f"unavailable: {e}"
+        ok = False
     checks["llm_provider"] = settings.llm_provider
     checks["supabase_studio"] = settings.supabase_studio_url
     code = 200 if ok else 503

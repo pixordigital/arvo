@@ -61,9 +61,14 @@ async def ping() -> dict:
 
 
 async def send_event(
-    event_type: str, payload: dict, idempotency_key: str | None = None
+    event_type: str,
+    payload: dict,
+    idempotency_key: str | None = None,
+    business_trace_id: str | None = None,
 ) -> dict:
     body_dict = {"type": event_type, "payload": payload}
+    if business_trace_id:
+        body_dict["business_trace_id"] = business_trace_id
     body = json.dumps(body_dict, separators=(",", ":")).encode()
     path = f"{PATH_PREFIX}/events"
     key = idempotency_key or str(uuid.uuid4())
@@ -85,7 +90,7 @@ async def list_deals(org_id: str, limit: int = 100) -> dict:
     """GET /deals from peer AIOS (CRM single source of truth)."""
     if not org_id:
         return {"org_id": None, "deals": [], "count": 0}
-    path = "/api/v1/integrations/aios/v1/deals"
+    path = f"{PATH_PREFIX}/deals"
     url = f"{path}?org_id={org_id}&limit={int(limit)}"
     r = await _request_with_retry("GET", url, headers=_headers("GET", path))
     r.raise_for_status()

@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     aios_service_key_id: str = ""
     aios_service_key: str = ""
 
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")
+
 
 settings = Settings()
 

@@ -2,7 +2,7 @@
 
 Find the leak. Protect the value. Control the revenue.
 
-**Stack:** FastAPI + Jinja2 + Tailwind + SQLAlchemy/SQLite local ou Postgres (Supabase) — sem Next.js/Node (spec §144-151). AI interpreta, Python calcula.
+**Stack:** FastAPI + Jinja2 + Tailwind + SQLAlchemy/Supabase Postgres (DB principal em produção) — sem Next.js/Node (spec §144-151). AI interpreta, Python calcula.
 
 **Ports:** `9777` ARVO web, `9771` Supabase Studio (ARVO project)
 
@@ -26,7 +26,7 @@ POSTGRES_PASSWORD=$(openssl rand -hex 24) docker compose up --build -d
 # web/worker subirem (ARVO_SKIP_MIGRATIONS=1 neles).
 ```
 
-Sem Docker (dev local) o padrão é SQLite (`sqlite+aiosqlite:///./arvo.db`); defina `ARVO_DATABASE_URL` para usar Postgres.
+Sem Docker (dev local) o padrão é SQLite (`sqlite+aiosqlite:///./arvo.db`); defina `ARVO_DATABASE_URL` para usar Postgres. Em produção aponte `ARVO_DATABASE_URL` para Supabase Postgres (`postgresql+asyncpg://...@supabase-db:5432/postgres`); SQLite e o serviço `postgres` do compose são defaults de dev/local, não DB de produção.
 
 ## Coolify deploy
 
@@ -49,4 +49,6 @@ Principio verdade: limites só de `app/core/config.py:PLANS` + `app/core/limits.
 - Listagens de API aceitam `limit` (1–200, padrão 50) e `offset`, com ordem estável (`created_at`, `id`). A página `/evidence` aceita os mesmos parâmetros.
 - Rate limit de login/cadastro usa Redis (`INCR` + `EXPIRE`, chave por IP+rota) quando acessível; se o Redis cair, cai para contador em memória por processo.
 - Adaptadores CRM/e-mail respondem 501 (não implementados); entrada real hoje é CSV e upload.
-- Execução de action registra a transição de estado; nenhuma integração externa é chamada.
+- Execução de action registra a transição de estado; sem integração ligada, nenhuma chamada externa.
+- Integração AIOS ↔ ARVO é flag-gated: `ARVO_AIOS_INTEGRATION_ENABLED=false` por padrão; endpoints `/api/integrations/aios/v1/*` exigem HMAC + nonce e o outbox só publica com a flag ligada.
+- Control Center lê dados reais da org: `exposure` = soma de `finding.exposure_amount`; `verified` = soma de `financial_ledger` com `entry_type='VERIFIED'` (recuperação comprovada). Sem org, zeros — sem demo ou estimativa.

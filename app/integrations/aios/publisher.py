@@ -20,26 +20,27 @@ async def enqueue_outbox(
     business_trace_id: str | None = None,
     peer: str = "aios",
     session=None,
+    idempotency_key: str | None = None,
 ) -> str:
-    key = str(uuid.uuid4())
+    outbox_id = str(uuid.uuid4())
     row = IntegrationOutbox(
-        id=key,
+        id=outbox_id,
         peer=peer,
         event_type=event_type,
         payload=payload,
         business_trace_id=business_trace_id,
-        idempotency_key=key,
+        idempotency_key=idempotency_key or outbox_id,
         status="pending",
     )
     if session is not None:
         session.add(row)
         await session.flush()
-        return key
+        return outbox_id
     async with get_sessionmaker()() as db:
         db.add(row)
         await db.commit()
-    await schedule_flush(key)
-    return key
+    await schedule_flush(outbox_id)
+    return outbox_id
 
 
 async def schedule_flush(outbox_id: str) -> None:
@@ -115,6 +116,7 @@ async def _deliver(row: IntegrationOutbox, raise_errors: bool) -> bool:
             row.event_type,
             row.payload,
             idempotency_key=row.idempotency_key,
+            business_trace_id=row.business_trace_id,
         )
     except Exception as error:
         retryable = (

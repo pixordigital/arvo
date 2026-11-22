@@ -76,6 +76,7 @@ async def execute_action(aid: str, ctx=Depends(get_current_user)):
                 await enqueue_outbox(
                     "action.executed",
                     {"org_id": a.org_id, "action_id": a.id, "finding_id": a.finding_id,
+                     "deal_id": (f.provenance or {}).get("source_deal_id"),
                      "title": a.title, "exposure_amount": f.exposure_amount},
                     business_trace_id=a.id, idempotency_key=f"exec:{a.id}",
                 )
@@ -117,7 +118,8 @@ async def verify_action(aid: str, data: dict, ctx=Depends(get_current_user)):
                 await enqueue_outbox(
                     "action.verified",
                     {"org_id": ctx["membership"].org_id, "action_id": a.id,
-                     "finding_id": a.finding_id, "verified_amount": verified,
+                     "finding_id": a.finding_id, "deal_id": (f.provenance or {}).get("source_deal_id"),
+                     "verified_amount": verified,
                      "currency": "BRL"},
                     business_trace_id=a.id, idempotency_key=f"verify:{a.id}",
                 )

@@ -9,13 +9,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
-from .auth import _forget_nonce, verify_request
+from .auth import _CLOCK_SKEW, _forget_nonce, verify_request
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/integrations/aios/v1", tags=["aios-integration"])
 
-# in-memory (fast) + DB persist (survive restart) — Fase 1-persist
+# Cache-only; IntegrationEvent/IntegrationNonce DB is authority for cross-replica replay.
 _events: dict[str, tuple[float, dict]] = {}
 _events_lock = threading.Lock()
 _EVENTS_TTL = 86400
@@ -315,6 +315,164 @@ async def _handle_agent_action_completed(payload: dict, trace_id: str | None) ->
         raise
 
 
+async def _handle_deal_event(payload: dict, trace_id: str | None, event_type: str) -> dict:
+    """Deterministic deal risk rule (Python/Decimal, no LLM): deal value = exposure."""
+    from sqlalchemy import select
+
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Finding, FindingEvidence, FinancialEvent, Organization
+    from app.services.deal_audit import materiality
+    from app.services.financial import D, money
+
+    peer_org = payload.get("org_id")
+    deal_id = str(payload.get("deal_id") or payload.get("id") or "")
+    if not peer_org or not deal_id:
+        raise HTTPException(400, "org_id and deal_id required for deal events")
+    rule = "deal_created" if event_type == "deal.created" else "deal_stage_changed"
+    stage = str(payload.get("new_stage") or payload.get("stage") or "")
+    key = f"aios:deal:{deal_id[:40]}:{rule}:{stage[:24]}"[:100]
+    prov = {
+        "source": "aios",
+        "source_org_id": str(peer_org),
+        "source_deal_id": deal_id,
+        "business_trace_id": trace_id,
+        "rule": rule,
+        "stage": stage,
+    }
+
+    async with get_sessionmaker()() as s:
+        org = await s.get(Organization, str(peer_org))
+        if org is None:
+            org = (await s.execute(select(Organization).where(Organization.slug == str(peer_org)))).scalar_one_or_none()
+        if org is None:
+            raise HTTPException(400, "unknown peer org")
+        existing = (
+            await s.execute(select(Finding).where(Finding.org_id == org.id, Finding.idempotency_key == key))
+        ).scalar_one_or_none()
+        if existing is not None:
+            return {
+                "handled": rule,
+                "finding_id": existing.id,
+                "exposure_amount": existing.exposure_amount,
+                "finding_deduplicated": True,
+                "business_trace_id": trace_id,
+            }
+        amount = D(payload.get("value") or payload.get("amount") or "0")
+        if amount < 0:
+            amount = D("0")
+        exposure = money(amount)
+        severity, _bucket = materiality(exposure)
+        finding = Finding(
+            org_id=org.id,
+            kind="DEAL_RISK",
+            status="DETECTED",
+            severity=severity,
+            title=f"AIOS deal {deal_id[:64]} ({rule})",
+            description=f"Deterministic {rule} rule: stage={stage[:64]}, value={exposure}. No LLM.",
+            exposure_amount=exposure,
+            currency="BRL",
+            confidence=severity,
+            provenance=prov,
+            idempotency_key=key,
+            evidence_pack={"source": "aios", "rule": rule, "stage": stage, "payload": payload},
+        )
+        s.add(finding)
+        await s.flush()
+        s.add(
+            FindingEvidence(
+                finding_id=finding.id,
+                kind="EVIDENCE",
+                content={"source": "aios", "rule": rule, "stage": stage, "payload": payload, "business_trace_id": trace_id},
+            )
+        )
+        fe = FinancialEvent(
+            org_id=org.id,
+            kind="RISK_EXPOSURE",
+            amount=exposure,
+            currency="BRL",
+            idempotency_key=key,
+            attribution_level=2,
+            confidence=severity,
+            provenance=prov,
+        )
+        s.add(fe)
+        await s.commit()
+        return {
+            "handled": rule,
+            "finding_id": finding.id,
+            "financial_event_id": fe.id,
+            "exposure_amount": exposure,
+            "finding_deduplicated": False,
+            "business_trace_id": trace_id,
+        }
+
+
+class SsoTicketIn(BaseModel):
+    ticket: str | None = None
+    nonce: str | None = None
+    key_id: str | None = None
+
+
+@router.post("/sso-ticket")
+async def consume_sso_ticket(request: Request, body: SsoTicketIn | None = None):
+    """Consume a short-lived AIOS-signed ticket and issue an existing ARVO token."""
+    import jwt
+    from sqlalchemy import select
+
+    from app.core.security import create_token
+    from app.database.engine import get_sessionmaker
+    from app.database.models import ALL_ROLES, Organization, User
+
+    _require_enabled()
+    if not settings.aios_service_key:
+        raise HTTPException(503, "AIOS integration not configured")
+    ticket = (body.ticket if body else None) or request.headers.get("x-sso-ticket")
+    if not ticket:
+        raise HTTPException(400, "ticket required")
+    kid = (body.key_id if body else None) or request.headers.get("x-service-key-id")
+    if kid and kid != settings.aios_service_key_id:
+        raise HTTPException(401, "Unknown service key id")
+    try:
+        claims = jwt.decode(
+            ticket, settings.aios_service_key, algorithms=["HS256"], options={"verify_aud": False}
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(401, "Invalid SSO ticket")
+    if claims.get("iss") not in (None, "aios") or claims.get("aud") not in (None, "arvo"):
+        raise HTTPException(401, "Invalid SSO ticket issuer/audience")
+    if "exp" not in claims:
+        iat = claims.get("iat")
+        if not isinstance(iat, (int, float)) or abs(time.time() - iat) > _CLOCK_SKEW:
+            raise HTTPException(401, "SSO ticket expired")
+    nonce = (body.nonce if body else None) or claims.get("jti") or request.headers.get("x-service-nonce")
+    if not nonce:
+        raise HTTPException(401, "SSO ticket nonce required")
+    persisted = await _db_persist_nonce(str(nonce)[:64])
+    if persisted is False:
+        raise HTTPException(401, "Replay nonce (DB)")
+    if persisted is None:
+        raise HTTPException(503, "Replay protection unavailable")
+    sub, peer_org, role = claims.get("sub"), claims.get("org_id"), claims.get("role")
+    if not sub or not peer_org or not role:
+        raise HTTPException(400, "SSO ticket missing identity claims")
+    if role not in ALL_ROLES:
+        raise HTTPException(400, "Invalid role")
+    async with get_sessionmaker()() as s:
+        org = await s.get(Organization, str(peer_org))
+        if org is None:
+            org = (await s.execute(select(Organization).where(Organization.slug == str(peer_org)))).scalar_one_or_none()
+        if org is None:
+            raise HTTPException(401, "Unknown peer org")
+        user_id = str(sub)
+        email = claims.get("email")
+        if email:
+            user = (await s.execute(select(User).where(User.email == str(email).strip().lower()))).scalar_one_or_none()
+            if user:
+                user_id = user.id
+    token = create_token(user_id, org.id, role)
+    return {"access_token": token, "token_type": "bearer", "org_id": org.id, "user_id": user_id, "role": role}
+
+
 @router.post("/events", dependencies=[Depends(_require_auth)])
 async def ingest_event(
     body: AiosEvent,
@@ -347,6 +505,9 @@ async def ingest_event(
         if body.type == "agent.action.completed":
             extra_resp = await _handle_agent_action_completed(body.payload, trace_id)
             side_effect_started = bool(extra_resp.get("handled"))
+        elif body.type in ("deal.created", "deal.stage_changed"):
+            extra_resp = await _handle_deal_event(body.payload, trace_id, body.type)
+            side_effect_started = True
         resp = {
             "status": "processed",
             "idempotency_key": idempotency_key,
