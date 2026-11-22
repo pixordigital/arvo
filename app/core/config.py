@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     aios_base_url: str = ""
     aios_service_key_id: str = ""
     aios_service_key: str = ""
+    aios_allowed_orgs: str = ""  # CSV de org ids/slugs AIOS permitidos (writes/SSO); vazio = sem restrição
 
     @property
     def is_sqlite(self) -> bool:

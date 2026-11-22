@@ -1,6 +1,7 @@
 """Outbox publisher — pending → HTTP to AIOS with retry."""
 
 import logging
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -9,7 +10,7 @@ from sqlalchemy import select, update
 
 from app.core.config import settings
 from app.database.engine import get_sessionmaker
-from app.database.models import IntegrationOutbox
+from app.database.models import IntegrationEvent, IntegrationOutbox
 
 logger = logging.getLogger(__name__)
 
@@ -17,15 +18,15 @@ logger = logging.getLogger(__name__)
 async def enqueue_outbox(
     event_type: str,
     payload: dict,
-    business_trace_id: str | None = None,
-    peer: str = "aios",
-    session=None,
+    *,
     idempotency_key: str | None = None,
+    business_trace_id: str | None = None,
+    session=None,
 ) -> str:
     outbox_id = str(uuid.uuid4())
     row = IntegrationOutbox(
         id=outbox_id,
-        peer=peer,
+        peer="aios",
         event_type=event_type,
         payload=payload,
         business_trace_id=business_trace_id,
@@ -44,6 +45,8 @@ async def enqueue_outbox(
 
 
 async def schedule_flush(outbox_id: str) -> None:
+    if os.getenv("ARVO_USE_ARQ_WORKER", "").strip().lower() not in {"1", "true", "yes"}:
+        return
     pool = None
     try:
         from arq import create_pool
@@ -86,26 +89,74 @@ async def _claim_rows(
                 .limit(batch)
             )
             candidate_ids = list(ids)
-        claimed_ids = []
-        for candidate_id in candidate_ids:
-            result = await db.execute(
-                update(IntegrationOutbox)
-                .where(
-                    IntegrationOutbox.id == candidate_id,
-                    IntegrationOutbox.status == "pending",
-                )
-                .values(status="processing", attempts=IntegrationOutbox.attempts + 1)
+        if not candidate_ids:
+            return []
+        result = await db.execute(
+            update(IntegrationOutbox)
+            .where(
+                IntegrationOutbox.id.in_(candidate_ids),
+                IntegrationOutbox.status == "pending",
             )
-            if result.rowcount:
-                claimed_ids.append(candidate_id)
+            .values(status="processing", attempts=IntegrationOutbox.attempts + 1)
+            .returning(IntegrationOutbox.id)
+        )
+        claimed_ids = list(result.scalars())
         await db.commit()
         if not claimed_ids:
             return []
-        return list(
+        rows = list(
             await db.scalars(
-                select(IntegrationOutbox).where(IntegrationOutbox.id.in_(claimed_ids))
+                select(IntegrationOutbox).where(
+                    IntegrationOutbox.id.in_(claimed_ids)
+                )
             )
         )
+        order = {rid: index for index, rid in enumerate(claimed_ids)}
+        return sorted(rows, key=lambda row: order[row.id])
+
+
+async def _persist_outcomes(rows: list[IntegrationOutbox]) -> None:
+    """One session for all terminal/outcome updates of a claimed batch."""
+    if not rows:
+        return
+    async with get_sessionmaker()() as db:
+        current_rows = await db.scalars(
+            select(IntegrationOutbox).where(
+                IntegrationOutbox.id.in_([row.id for row in rows]),
+                IntegrationOutbox.status == "processing",
+            )
+        )
+        by_id = {current.id: current for current in current_rows}
+        for row in rows:
+            current = by_id.get(row.id)
+            if current is None:
+                continue
+            current.status = row.status
+            current.last_error = row.last_error
+            if row.status == "sent":
+                current.sent_at = row.sent_at
+        await db.commit()
+
+
+async def _notify_exhausted(row: IntegrationOutbox, error: Exception) -> None:
+    """Log and annotate the source event; never stop the rest of the batch."""
+    logger.error(
+        "integration outbox %s gave up after %d attempts (event=%s): %s",
+        row.id[:8], row.attempts, row.event_type, error,
+    )
+    try:
+        async with get_sessionmaker()() as db:
+            await db.execute(
+                update(IntegrationEvent)
+                .where(IntegrationEvent.idempotency_key == row.idempotency_key)
+                .values(response={
+                    "delivered": False,
+                    "reason": f"outbox exhausted after {row.attempts} attempts",
+                })
+            )
+            await db.commit()
+    except Exception:
+        logger.debug("could not annotate integration event", exc_info=True)
 
 
 async def _deliver(row: IntegrationOutbox, raise_errors: bool) -> bool:
@@ -124,26 +175,19 @@ async def _deliver(row: IntegrationOutbox, raise_errors: bool) -> bool:
             or error.response.status_code in (408, 429)
             or error.response.status_code >= 500
         )
-        status = "pending" if retryable and row.attempts < 5 else "failed"
-        async with get_sessionmaker()() as db:
-            current = await db.get(IntegrationOutbox, row.id)
-            if current and current.status == "processing":
-                current.status = status
-                current.last_error = str(error)[:500]
-                await db.commit()
+        row.status = "pending" if retryable and row.attempts < 5 else "failed"
+        row.last_error = str(error)[:500]
+        if row.status == "failed":
+            await _notify_exhausted(row, error)
         if raise_errors:
             raise
         logger.warning(
             "outbox %s attempt %d failed: %s", row.id[:8], row.attempts, error
         )
         return False
-    async with get_sessionmaker()() as db:
-        current = await db.get(IntegrationOutbox, row.id)
-        if current and current.status == "processing":
-            current.status = "sent"
-            current.sent_at = datetime.now(UTC).replace(tzinfo=None)
-            current.last_error = None
-            await db.commit()
+    row.status = "sent"
+    row.sent_at = datetime.now(UTC).replace(tzinfo=None)
+    row.last_error = None
     return True
 
 
@@ -153,12 +197,18 @@ async def flush_outbox(batch: int = 20) -> dict:
     rows = await _claim_rows(batch)
     sent = 0
     failed = 0
+    exhausted = 0
     for row in rows:
         if await _deliver(row, raise_errors=False):
             sent += 1
         else:
             failed += 1
-    return {"sent": sent, "failed": failed}
+            if row.status == "failed":
+                exhausted += 1
+    await _persist_outcomes(rows)
+    if exhausted:
+        logger.error("integration outbox: %d event(s) permanently undeliverable", exhausted)
+    return {"sent": sent, "failed": failed, "exhausted": exhausted}
 
 
 async def integration_outbox_flush(
@@ -172,6 +222,9 @@ async def integration_outbox_flush(
         rows = await _claim_rows(1, outbox_id=outbox_id)
         if not rows:
             return {"skipped": True}
-        await _deliver(rows[0], raise_errors=True)
+        try:
+            await _deliver(rows[0], raise_errors=True)
+        finally:
+            await _persist_outcomes(rows)
         return {"sent": 1}
     return await flush_outbox(batch=batch)

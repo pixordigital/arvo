@@ -36,11 +36,6 @@ def parse_ai_risks(content: str) -> list[dict]:
     return risks
 
 
-def prioritize(findings: list[dict]) -> list[dict]:
-    sev_order = {"CRITICAL":4,"HIGH":3,"MEDIUM":2,"LOW":1}
-    def key(f): return (sev_order.get(f.get("severity","MEDIUM"),2), D(f.get("exposure_amount","0")))
-    return sorted(findings, key=key, reverse=True)
-
 async def audit_deal(deal: dict, ai_output: dict | None = None) -> dict:
     """Recebe extração AI (texto interpretado) + calcula exposição determinística."""
     # AI output example: {"risks":[{"kind":"DISCOUNT","discount_pct":15,"reason":"..."}]}

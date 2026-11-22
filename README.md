@@ -26,17 +26,20 @@ POSTGRES_PASSWORD=$(openssl rand -hex 24) docker compose up --build -d
 # web/worker subirem (ARVO_SKIP_MIGRATIONS=1 neles).
 ```
 
-Sem Docker (dev local) o padrão é SQLite (`sqlite+aiosqlite:///./arvo.db`); defina `ARVO_DATABASE_URL` para usar Postgres. Em produção aponte `ARVO_DATABASE_URL` para Supabase Postgres (`postgresql+asyncpg://...@supabase-db:5432/postgres`); SQLite e o serviço `postgres` do compose são defaults de dev/local, não DB de produção.
+Sem Docker (dev local) o padrão é SQLite (`sqlite+aiosqlite:///./arvo.db`); defina `ARVO_DATABASE_URL` para usar Postgres. Em produção aponte `ARVO_DATABASE_URL` para Supabase Postgres; SQLite e o serviço `postgres` do compose são defaults de dev/local, não DB de produção.
 
 ## Coolify deploy
 
 - Project: `ARVO` (`n9mblbh5y56x7rthezbqhbsd`) — env `production`
 - Service: `arvo-supabase` (`r4afp9igrytbuir563nsbqem`) — Studio exposto 9771:3000
-- App: criar `Application` dockercompose apontando repo, `ports_exposes 9777:9777`, env vars do `.env.example` (incluindo `POSTGRES_PASSWORD`)
+- App `l7p2wj6ysqcnnymtynr08up1`: build nixpacks, `ports_exposes 9777:9777`, env vars do `.env.example`
+- DSN prod usa host `arvo-db-bridge:5432` (socat → `supabase-db-r4afp9igrytbuir563nsbqem:5432`); Redis prod `arvo-redis-1:6379` na rede `coolify`.
+- Sem worker arq no Coolify: outbox é drenada por tarefa agendada `arvo-outbox-flush` (1/min) e reconciliação de deals por `arvo-reconcile`. `ARVO_USE_ARQ_WORKER=true` reativa enqueue imediato quando worker existir.
+- `ARVO_AIOS_ALLOWED_ORGS` (opcional, CSV de ids/slugs) restringe orgs AIOS com escrita/SSO permitida.
 
 ## Supabase Studio
 
-`http://178.105.181.38:9771` — SQL Editor + Table Editor. DB `supabase-db:5432` interno.
+`http://178.105.181.38:9771` — SQL Editor + Table Editor. DB interno do serviço `arvo-supabase`.
 
 ## Estrutura
 

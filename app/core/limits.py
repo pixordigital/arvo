@@ -48,8 +48,3 @@ async def check_org_limits(org_id: str, kind: str, delta: int = 1) -> tuple[bool
         elif kind == "orgs":
             usage = {"plan": plan, "limits": limits}
         return True, None, usage
-
-def human_limit_error(plan: str, kind: str) -> str:
-    lim = plan_limits(plan)
-    key = f"max_{kind}"
-    return f"Plano {plan}: limite {lim.get(key, '?')} {kind}. Veja /pricing."

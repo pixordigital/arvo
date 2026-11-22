@@ -67,22 +67,19 @@ async def execute_action(aid: str, ctx=Depends(get_current_user)):
         a.status="EXECUTED"; a.executed_at=datetime.now(timezone.utc).replace(tzinfo=None)
         f=await s.get(Finding, a.finding_id)
         if f: f.status="ACTION_EXECUTED"
-        await s.commit()
         # Bridge to AIOS: action executed -> agent can stop chasing / update deal stage.
-        try:
-            from app.core.config import settings as _s
-            if getattr(_s, "aios_integration_enabled", False) and f is not None:
-                from app.integrations.aios.publisher import enqueue_outbox
-                await enqueue_outbox(
-                    "action.executed",
-                    {"org_id": a.org_id, "action_id": a.id, "finding_id": a.finding_id,
-                     "deal_id": (f.provenance or {}).get("source_deal_id"),
-                     "title": a.title, "exposure_amount": f.exposure_amount},
-                    business_trace_id=a.id, idempotency_key=f"exec:{a.id}",
-                )
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).debug("aios outbox enqueue skipped: %s", e)
+        from app.core.config import settings as _s
+        if getattr(_s, "aios_integration_enabled", False) and f is not None:
+            from app.integrations.aios.publisher import enqueue_outbox
+            await enqueue_outbox(
+                "action.executed",
+                {"org_id": a.org_id, "action_id": a.id, "finding_id": a.finding_id,
+                 "deal_id": (f.provenance or {}).get("source_deal_id"),
+                 "title": a.title, "exposure_amount": f.exposure_amount},
+                business_trace_id=a.id, idempotency_key=f"exec:{a.id}",
+                session=s,
+            )
+        await s.commit()
         return {"id": a.id, "status": a.status}
 
 @router.post("/actions/{aid}/verify")
@@ -109,23 +106,20 @@ async def verify_action(aid: str, data: dict, ctx=Depends(get_current_user)):
         s.add(fe); await s.flush()
         fl=FinancialLedger(org_id=ctx["membership"].org_id, event_id=fe.id, entry_type="VERIFIED", amount=verified, currency="BRL", description=f"Verified action {aid}")
         s.add(fl)
-        await s.commit()
         # Bridge to AIOS: verified recovery -> update deal + ledger proof.
-        try:
-            from app.core.config import settings as _s
-            if getattr(_s, "aios_integration_enabled", False):
-                from app.integrations.aios.publisher import enqueue_outbox
-                await enqueue_outbox(
-                    "action.verified",
-                    {"org_id": ctx["membership"].org_id, "action_id": a.id,
-                     "finding_id": a.finding_id, "deal_id": (f.provenance or {}).get("source_deal_id"),
-                     "verified_amount": verified,
-                     "currency": "BRL"},
-                    business_trace_id=a.id, idempotency_key=f"verify:{a.id}",
-                )
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).debug("aios outbox enqueue skipped: %s", e)
+        from app.core.config import settings as _s
+        if getattr(_s, "aios_integration_enabled", False):
+            from app.integrations.aios.publisher import enqueue_outbox
+            await enqueue_outbox(
+                "action.verified",
+                {"org_id": ctx["membership"].org_id, "action_id": a.id,
+                 "finding_id": a.finding_id, "deal_id": (f.provenance or {}).get("source_deal_id"),
+                 "verified_amount": verified,
+                 "currency": "BRL"},
+                business_trace_id=a.id, idempotency_key=f"verify:{a.id}",
+                session=s,
+            )
+        await s.commit()
         return {"id": a.id, "status": a.status, "verified_amount": verified}
 
 @router.get("/actions")

@@ -138,11 +138,11 @@ def _set_session(resp: RedirectResponse, token: str, request: Request) -> Redire
 
 async def _stats(org_id: str | None) -> dict:
     """Read-only org metrics. No org means true zeros, never demo data."""
-    from sqlalchemy import func, select
+    from sqlalchemy import Numeric, case, cast, func, select
 
     from app.database.engine import get_sessionmaker
     from app.database.models import Account, Finding, FinancialLedger, Opportunity
-    from app.services.financial import sum_amounts
+    from app.services.financial import money
 
     stats = {
         "accounts": 0,
@@ -164,33 +164,32 @@ async def _stats(org_id: str | None) -> dict:
         stats["opps"] = (
             await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))
         ).scalar() or 0
-        stats["findings"] = (
-            await s.execute(select(func.count(Finding.id)).where(Finding.org_id == org_id))
-        ).scalar() or 0
-        stats["critical"] = (
+        f_counts = (
             await s.execute(
-                select(func.count(Finding.id)).where(
-                    Finding.org_id == org_id, Finding.severity == "CRITICAL"
-                )
+                select(
+                    func.count(Finding.id),
+                    func.sum(case((Finding.severity == "CRITICAL", 1), else_=0)),
+                    func.sum(cast(Finding.exposure_amount, Numeric)),
+                ).where(Finding.org_id == org_id)
             )
-        ).scalar() or 0
-        exp_vals = (
-            await s.execute(select(Finding.exposure_amount).where(Finding.org_id == org_id))
-        ).scalars().all()
-        stats["exposure"] = sum_amounts(exp_vals)
-        for entry_type, key in (("DEBIT", "debit"), ("CREDIT", "credit"), ("VERIFIED", "verified")):
-            vals = (
-                await s.execute(
-                    select(FinancialLedger.amount).where(
-                        FinancialLedger.org_id == org_id,
-                        FinancialLedger.entry_type == entry_type,
-                    )
+        ).one()
+        stats["findings"] = f_counts[0] or 0
+        stats["critical"] = f_counts[1] or 0
+        stats["exposure"] = money(f_counts[2] or 0)
+        ledger_rows = (
+            await s.execute(
+                select(
+                    FinancialLedger.entry_type,
+                    func.sum(cast(FinancialLedger.amount, Numeric)),
+                    func.count(FinancialLedger.id),
                 )
-            ).scalars().all()
-            stats[key] = sum_amounts(vals)
-        stats["ledger_count"] = (
-            await s.execute(select(func.count(FinancialLedger.id)).where(FinancialLedger.org_id == org_id))
-        ).scalar() or 0
+                .where(FinancialLedger.org_id == org_id)
+                .group_by(FinancialLedger.entry_type)
+            )
+        ).all()
+        for entry_type, key in (("DEBIT", "debit"), ("CREDIT", "credit"), ("VERIFIED", "verified")):
+            stats[key] = money(next((r[1] or 0 for r in ledger_rows if r[0] == entry_type), 0))
+        stats["ledger_count"] = sum(r[2] for r in ledger_rows)
     ex_f = float(stats["exposure"])
     ver_f = float(stats["verified"])
     stats["leak_pct_verified"] = int(round(ver_f / ex_f * 100)) if ex_f > 0 else 0
@@ -366,6 +365,7 @@ async def findings(request: Request):
                 select(Finding)
                 .where(Finding.org_id == auth["org_id"])
                 .order_by(Finding.created_at.desc())
+                .limit(100)
             )
         ).scalars().all()
         rows = [
@@ -399,6 +399,7 @@ async def deals(request: Request):
                 select(Opportunity)
                 .where(Opportunity.org_id == auth["org_id"])
                 .order_by(Opportunity.created_at.desc())
+                .limit(100)
             )
         ).scalars().all()
         rows = [
@@ -407,7 +408,10 @@ async def deals(request: Request):
         ]
         accounts_list = (
             await s.execute(
-                select(Account).where(Account.org_id == auth["org_id"]).order_by(Account.name)
+                select(Account)
+                .where(Account.org_id == auth["org_id"])
+                .order_by(Account.name)
+                .limit(100)
             )
         ).scalars().all()
         accounts_list = [{"id": a.id, "name": a.name} for a in accounts_list]
@@ -438,7 +442,7 @@ async def accounts(request: Request):
         q = select(Account).where(Account.org_id == auth["org_id"])
         if type_filter:
             q = q.where(Account.type == type_filter)
-        rows = (await s.execute(q.order_by(Account.created_at.desc()))).scalars().all()
+        rows = (await s.execute(q.order_by(Account.created_at.desc()).limit(100))).scalars().all()
         rows = [{"id": r.id, "name": r.name, "domain": r.domain, "type": r.type} for r in rows]
     return templates.TemplateResponse(
         request,
@@ -742,7 +746,10 @@ async def actions(request: Request):
     async with get_sessionmaker()() as s:
         rows = (
             await s.execute(
-                select(Action).where(Action.org_id == auth["org_id"]).order_by(Action.created_at.desc())
+                select(Action)
+                .where(Action.org_id == auth["org_id"])
+                .order_by(Action.created_at.desc())
+                .limit(100)
             )
         ).scalars().all()
         rows = [
@@ -886,13 +893,15 @@ async def settings_add_member(
 
     from app.core.limits import check_org_limits
     from app.database.engine import get_sessionmaker
-    from app.database.models import ALL_ROLES, Membership, User
+    from app.database.models import ALL_ROLES, ROLE_ORDER, Membership, User
 
     auth = await _require_org(request)
     if auth["role"] not in ("OWNER", "ADMIN"):
         raise HTTPException(403, "Need OWNER/ADMIN")
     if role not in ALL_ROLES:
         raise HTTPException(400, f"Invalid role; use one of {ALL_ROLES}")
+    if ROLE_ORDER[role] > ROLE_ORDER[auth["role"]]:
+        raise HTTPException(403, "Cannot assign a role above your own")
     ok, err, _ = await check_org_limits(auth["org_id"], "users")
     if not ok:
         raise HTTPException(402, err)
@@ -929,10 +938,16 @@ async def settings_page(request: Request):
         mrows = (
             await s.execute(select(Membership).where(Membership.org_id == auth["org_id"]))
         ).scalars().all()
-        members = []
-        for m in mrows:
-            u = await s.get(User, m.user_id)
-            members.append({"email": u.email if u else m.user_id[:8], "role": m.role, "active": m.is_active})
+        emails = {
+            u.id: u.email
+            for u in (
+                await s.execute(select(User).where(User.id.in_([m.user_id for m in mrows])))
+            ).scalars().all()
+        }
+        members = [
+            {"email": emails.get(m.user_id) or m.user_id[:8], "role": m.role, "active": m.is_active}
+            for m in mrows
+        ]
         acct_cnt = (
             await s.execute(select(func.count(Account.id)).where(Account.org_id == auth["org_id"]))
         ).scalar() or 0

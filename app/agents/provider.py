@@ -1,18 +1,9 @@
-"""ARVO — AIProvider. LLM nunca calcula verdade financeira. generate/extract/embed + adapters."""
+"""ARVO — OpenRouter LLM provider. LLM nunca calcula verdade financeira."""
 
 import time, httpx
-from typing import Any
 from app.core.config import settings
 
-class AIProvider:
-    async def generate(self, prompt: str, system: str = "", model: str | None = None, temperature: float = 0.2) -> dict:
-        raise NotImplementedError
-    async def extract(self, text: str, schema: dict, model: str | None = None) -> dict:
-        raise NotImplementedError
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        raise NotImplementedError
-
-class OpenRouterProvider(AIProvider):
+class OpenRouterProvider:
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         self.api_key = api_key or settings.openrouter_api_key
         self.base_url = (base_url or settings.openrouter_base_url).rstrip("/")
@@ -32,16 +23,5 @@ class OpenRouterProvider(AIProvider):
         latency=int((time.time()-t0)*1000)
         return {"content": j["choices"][0]["message"]["content"], "model": model, "usage": j.get("usage",{}), "latency_ms": latency}
 
-    async def extract(self, text: str, schema: dict, model: str | None = None) -> dict:
-        # Pydantic-contracted extraction via JSON mode
-        sys = f"Extract JSON matching schema {schema}. Return only JSON."
-        res = await self.generate(f"Text:\n{text}\n\nSchema:{schema}", system=sys, model=model, temperature=0)
-        import json as _json
-        try: return _json.loads(res["content"])
-        except Exception: return {"raw": res["content"]}
-
-def get_provider(name: str | None = None) -> AIProvider:
-    name = (name or settings.llm_provider).lower()
-    if name == "openrouter":
-        return OpenRouterProvider()
-    raise RuntimeError(f"LLM provider '{name}' not implemented (supported: openrouter)")
+def get_provider() -> OpenRouterProvider:
+    return OpenRouterProvider()

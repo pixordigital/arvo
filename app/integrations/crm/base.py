@@ -1,36 +1,15 @@
-"""ARVO — CRM base adapter. RAW→VALIDATION→NORMALIZATION→CANONICAL→PROVENANCE→EVENT."""
+"""ARVO — CRM adapters. Live sync not implemented; CSV/upload only."""
 
-from typing import Any
-from sqlalchemy import select
+class UnimplementedAdapter:
+    """Stub: caller maps fetch's NotImplementedError to HTTP 501."""
+    def __init__(self, source: str):
+        self.source = source
 
-class CRMAdapter:
-    source: str = "BASE"
-    async def fetch(self, ctx: dict) -> list[dict]: raise NotImplementedError
-    def normalize(self, raw: dict, org_id: str) -> dict:
-        # Map raw → canonical account/contact/opportunity stub
-        return {"raw": raw, "org_id": org_id, "source": self.source}
-
-class _UnimplementedAdapter(CRMAdapter):
-    async def fetch(self, ctx):
+    async def fetch(self, ctx: dict) -> list[dict]:
         raise NotImplementedError(f"{self.source} live sync not implemented; CSV/upload only")
 
 
-class HubspotAdapter(_UnimplementedAdapter):
-    source="HUBSPOT"
-
-class SalesforceAdapter(_UnimplementedAdapter):
-    source="SALESFORCE"
-
-class PipedriveAdapter(_UnimplementedAdapter):
-    source="PIPEDRIVE"
-
-class TwentyAdapter(_UnimplementedAdapter):
-    source="TWENTY"
-
-class GmailAdapter(_UnimplementedAdapter):
-    source="GMAIL"
-
-class OutlookAdapter(_UnimplementedAdapter):
-    source="OUTLOOK"
-
-ADAPTERS = {"hubspot": HubspotAdapter(), "salesforce": SalesforceAdapter(), "pipedrive": PipedriveAdapter(), "twenty": TwentyAdapter(), "gmail": GmailAdapter(), "outlook": OutlookAdapter()}
+ADAPTERS = {
+    name: UnimplementedAdapter(name.upper())
+    for name in ("hubspot", "salesforce", "pipedrive", "twenty", "gmail", "outlook")
+}

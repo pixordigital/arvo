@@ -8,10 +8,6 @@ def D(v) -> Decimal:
     except InvalidOperation: return Decimal("0")
 
 def money(v, places=2) -> str:
-    q = Decimal("1." + "0"*places) if places else Decimal("1")
-    # Actually quantize needs exponent: 1.00
-    exp = Decimal("1." + "0"*places) if places else Decimal("1")
-    # Use quantize with 0.01
     dec = D(v).quantize(Decimal("0.01") if places==2 else Decimal("1"), rounding=ROUND_HALF_UP)
     return format(dec, "f")
 
@@ -31,14 +27,6 @@ def calc_proposal_total(items: list[dict]) -> Tuple[str, str]:
 
 def calc_discount_exposure(gross: str, net: str) -> str:
     return money(D(gross) - D(net))
-
-def calc_ledger_balance(entries: list[dict]) -> str:
-    bal = Decimal("0")
-    for e in entries:
-        amt = D(e.get("amount","0"))
-        if e.get("entry_type")=="CREDIT": bal += amt
-        else: bal -= amt
-    return money(bal)
 
 def sum_amounts(values) -> str:
     """Sum VARCHAR money columns in Python, not SQL.

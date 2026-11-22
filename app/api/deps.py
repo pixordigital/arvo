@@ -1,6 +1,6 @@
 """ARVO — FastAPI deps: current_user + org + RLS injection."""
 
-from fastapi import Request, Depends, HTTPException, Query
+from fastapi import Request, HTTPException, Query
 from sqlalchemy import select
 from app.database.engine import get_sessionmaker
 from app.core.security import decode_token
@@ -43,10 +43,3 @@ async def get_current_user(request: Request):
         request.state.org_id = m.org_id
         request.state.role = m.role
         return {"user": user, "membership": m, "claims": claims}
-
-def require_roles(*roles):
-    async def _dep(ctx=Depends(get_current_user)):
-        if ctx["membership"].role not in roles:
-            raise HTTPException(status_code=403, detail=f"Need one of {roles}")
-        return ctx
-    return _dep

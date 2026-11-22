@@ -248,7 +248,7 @@ async def test_list_deals_client(monkeypatch):
 
     async def fake_request(method, path, **kw):
         assert method == "GET"
-        assert "org_id=org-1" in path
+        assert kw["params"] == {"org_id": "org-1", "limit": 5}
         return FakeResp()
 
     monkeypatch.setattr(client, "_request_with_retry", fake_request)
@@ -558,6 +558,7 @@ async def test_list_deals_uses_full_versioned_path(monkeypatch):
 
     async def fake_request(method, path, **kw):
         seen["path"] = path
+        seen["params"] = kw.get("params")
         return FakeResp()
 
     real_headers = client._headers
@@ -569,8 +570,8 @@ async def test_list_deals_uses_full_versioned_path(monkeypatch):
     monkeypatch.setattr(client, "_request_with_retry", fake_request)
     monkeypatch.setattr(client, "_headers", spy_headers)
     await client.list_deals("org-1", limit=7)
-    assert seen["path"].startswith("/api/integrations/arvo/v1/deals?")
-    assert "org_id=org-1" in seen["path"] and "limit=7" in seen["path"]
+    assert seen["path"] == "/api/integrations/arvo/v1/deals"
+    assert seen["params"] == {"org_id": "org-1", "limit": 7}
     assert seen["sign_path"] == "/api/integrations/arvo/v1/deals"
 
 

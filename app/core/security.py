@@ -32,8 +32,3 @@ def decode_token(tok: str) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-
-def require_capability(user_role: str, cap: str):
-    from app.database.models import has_capability
-    if not has_capability(user_role, cap):
-        raise HTTPException(status_code=403, detail=f"Forbidden: need {cap} (role {user_role})")

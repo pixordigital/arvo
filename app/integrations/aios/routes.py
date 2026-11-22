@@ -9,7 +9,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
-from .auth import _CLOCK_SKEW, _forget_nonce, verify_request
+from . import auth as _auth
+from .auth import _forget_nonce, verify_request
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +21,50 @@ _events: dict[str, tuple[float, dict]] = {}
 _events_lock = threading.Lock()
 _EVENTS_TTL = 86400
 _PROCESSING_TTL = 60
+_MAX_EVENTS = 1000
+_MAX_NONCES = 1000
+_MAX_NONCE_LEN = 64
+
+
+def _prune_nonce_cache() -> None:
+    """Bound auth's in-memory replay cache; auth.py self-expires but has no size cap."""
+    with _auth._lock:
+        while len(_auth._seen_nonces) > _MAX_NONCES:
+            _auth._seen_nonces.pop(next(iter(_auth._seen_nonces)))
+
+
+def _allowed_aios_orgs() -> set[str]:
+    return {v.strip() for v in (settings.aios_allowed_orgs or "").split(",") if v.strip()}
+
+
+def _org_allowed(org, peer_org) -> bool:
+    """Allowlist matches resolved org id/slug or the raw signed org value."""
+    allowed = _allowed_aios_orgs()
+    return not allowed or bool({str(peer_org), org.id, org.slug} & allowed)
+
+
+async def cleanup_expired_nonces() -> int:
+    """Cron-callable GC for expired nonces (kept off the per-request path)."""
+    from sqlalchemy import delete
+
+    from app.database.engine import get_sessionmaker
+    from app.database.models import IntegrationNonce
+
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with get_sessionmaker()() as s:
+        result = await s.execute(delete(IntegrationNonce).where(IntegrationNonce.expires_at < cutoff))
+        await s.commit()
+        return result.rowcount or 0
 
 
 async def _db_persist_nonce(nonce: str) -> bool | None:
     """Insert nonce; False means duplicate, None means persistence unavailable."""
     try:
-        from sqlalchemy import delete
-
         from app.database.engine import get_sessionmaker
         from app.database.models import IntegrationNonce
 
         expires = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=600)
         async with get_sessionmaker()() as s:
-            await s.execute(delete(IntegrationNonce).where(IntegrationNonce.expires_at < datetime.now(timezone.utc).replace(tzinfo=None)))
             s.add(IntegrationNonce(nonce=nonce, peer="aios", expires_at=expires))
             await s.commit()
             return True
@@ -150,7 +182,13 @@ def _get_idempotent(key: str) -> dict | None:
 
 def _store_idempotent(key: str, resp: dict) -> None:
     with _events_lock:
-        _events[key] = (time.time() + _EVENTS_TTL, resp)
+        now = time.time()
+        for k, (exp, _) in list(_events.items()):
+            if exp < now:
+                del _events[k]
+        while len(_events) >= _MAX_EVENTS:
+            _events.pop(next(iter(_events)))
+        _events[key] = (now + _EVENTS_TTL, resp)
 
 
 def _clear_events() -> None:
@@ -173,9 +211,12 @@ async def _require_auth(request: Request) -> None:
     sig = request.headers.get("x-service-signature")
     if not all([kid, ts, nonce, sig]):
         raise HTTPException(401, "Missing service signature")
+    if len(nonce) > _MAX_NONCE_LEN:
+        raise HTTPException(401, "Invalid nonce")
     if kid != settings.aios_service_key_id:
         raise HTTPException(401, "Unknown service key id")
     body = await request.body()
+    _prune_nonce_cache()
     if not verify_request(kid, ts, nonce, request.method, request.url.path, body or None, sig, settings.aios_service_key):
         raise HTTPException(401, "Invalid service signature")
     persisted = await _db_persist_nonce(nonce)
@@ -301,6 +342,8 @@ async def _handle_agent_action_completed(payload: dict, trace_id: str | None) ->
             finding = await s.get(Finding, str(finding_id))
             if not finding:
                 return {"handled": False, "reason": "finding not found"}
+            if str(payload.get("org_id") or "") != str(finding.org_id):
+                raise HTTPException(403, "org_id mismatch for agent.action.completed")
             # Phase 5: persist trace in provenance
             if trace_id and isinstance(finding.provenance, dict):
                 prov = dict(finding.provenance)
@@ -310,6 +353,8 @@ async def _handle_agent_action_completed(payload: dict, trace_id: str | None) ->
             s.add(ev)
             await s.commit()
             return {"handled": "agent.action.completed", "finding_id": str(finding_id), "business_trace_id": trace_id, "evidence_id": ev.id}
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("agent.action.completed persistence failed")
         raise
@@ -345,7 +390,9 @@ async def _handle_deal_event(payload: dict, trace_id: str | None, event_type: st
         if org is None:
             org = (await s.execute(select(Organization).where(Organization.slug == str(peer_org)))).scalar_one_or_none()
         if org is None:
-            raise HTTPException(400, "unknown peer org")
+            raise HTTPException(403, "Unknown AIOS org (not provisioned in ARVO)")
+        if not _org_allowed(org, peer_org):
+            raise HTTPException(403, "AIOS org not allowed")
         existing = (
             await s.execute(select(Finding).where(Finding.org_id == org.id, Finding.idempotency_key == key))
         ).scalar_one_or_none()
@@ -415,13 +462,13 @@ class SsoTicketIn(BaseModel):
 
 @router.post("/sso-ticket")
 async def consume_sso_ticket(request: Request, body: SsoTicketIn | None = None):
-    """Consume a short-lived AIOS-signed ticket and issue an existing ARVO token."""
+    """Consume a short-lived AIOS-signed ticket; role/identity come from local membership."""
     import jwt
     from sqlalchemy import select
 
     from app.core.security import create_token
     from app.database.engine import get_sessionmaker
-    from app.database.models import ALL_ROLES, Organization, User
+    from app.database.models import ALL_ROLES, Membership, Organization, User
 
     _require_enabled()
     if not settings.aios_service_key:
@@ -429,48 +476,66 @@ async def consume_sso_ticket(request: Request, body: SsoTicketIn | None = None):
     ticket = (body.ticket if body else None) or request.headers.get("x-sso-ticket")
     if not ticket:
         raise HTTPException(400, "ticket required")
-    kid = (body.key_id if body else None) or request.headers.get("x-service-key-id")
-    if kid and kid != settings.aios_service_key_id:
-        raise HTTPException(401, "Unknown service key id")
     try:
         claims = jwt.decode(
             ticket, settings.aios_service_key, algorithms=["HS256"], options={"verify_aud": False}
         )
     except jwt.PyJWTError:
         raise HTTPException(401, "Invalid SSO ticket")
-    if claims.get("iss") not in (None, "aios") or claims.get("aud") not in (None, "arvo"):
+    if claims.get("iss") != "aios" or claims.get("aud") != "arvo":
         raise HTTPException(401, "Invalid SSO ticket issuer/audience")
     if "exp" not in claims:
-        iat = claims.get("iat")
-        if not isinstance(iat, (int, float)) or abs(time.time() - iat) > _CLOCK_SKEW:
-            raise HTTPException(401, "SSO ticket expired")
+        raise HTTPException(401, "SSO ticket missing expiration")
+    kid = (body.key_id if body else None) or request.headers.get("x-service-key-id") or claims.get("key_id") or claims.get("kid")
+    if not kid or kid != settings.aios_service_key_id:
+        raise HTTPException(401, "Unknown service key id")
     nonce = (body.nonce if body else None) or claims.get("jti") or request.headers.get("x-service-nonce")
-    if not nonce:
+    if not nonce or len(str(nonce)) > _MAX_NONCE_LEN:
         raise HTTPException(401, "SSO ticket nonce required")
-    persisted = await _db_persist_nonce(str(nonce)[:64])
+    persisted = await _db_persist_nonce(str(nonce))
     if persisted is False:
         raise HTTPException(401, "Replay nonce (DB)")
     if persisted is None:
         raise HTTPException(503, "Replay protection unavailable")
-    sub, peer_org, role = claims.get("sub"), claims.get("org_id"), claims.get("role")
-    if not sub or not peer_org or not role:
+    sub, peer_org, ticket_role = claims.get("sub"), claims.get("org_id"), claims.get("role")
+    if not sub or not peer_org:
         raise HTTPException(400, "SSO ticket missing identity claims")
-    if role not in ALL_ROLES:
+    if ticket_role is not None and ticket_role not in ALL_ROLES:
         raise HTTPException(400, "Invalid role")
     async with get_sessionmaker()() as s:
         org = await s.get(Organization, str(peer_org))
         if org is None:
             org = (await s.execute(select(Organization).where(Organization.slug == str(peer_org)))).scalar_one_or_none()
         if org is None:
-            raise HTTPException(401, "Unknown peer org")
-        user_id = str(sub)
-        email = claims.get("email")
-        if email:
-            user = (await s.execute(select(User).where(User.email == str(email).strip().lower()))).scalar_one_or_none()
-            if user:
-                user_id = user.id
-    token = create_token(user_id, org.id, role)
-    return {"access_token": token, "token_type": "bearer", "org_id": org.id, "user_id": user_id, "role": role}
+            raise HTTPException(403, "Unknown AIOS org (not provisioned in ARVO)")
+        if not _org_allowed(org, peer_org):
+            raise HTTPException(403, "AIOS org not allowed")
+        # sub is identity. email may only discover the same subject, never rebind it.
+        user = await s.get(User, str(sub))
+        if user is None and claims.get("email"):
+            discovered = (await s.execute(select(User).where(User.email == str(claims["email"]).strip().lower()))).scalar_one_or_none()
+            if discovered is not None and discovered.id != str(sub):
+                raise HTTPException(401, "SSO identity mismatch")
+            user = discovered
+        if user is None or not user.is_active:
+            raise HTTPException(401, "Unknown or inactive SSO subject")
+        membership = (
+            await s.execute(
+                select(Membership).where(
+                    Membership.user_id == user.id,
+                    Membership.org_id == org.id,
+                    Membership.is_active.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        if membership is None:
+            raise HTTPException(403, "No active ARVO membership for SSO subject")
+        role = membership.role
+        if ticket_role is not None and ticket_role != role:
+            raise HTTPException(403, "SSO role mismatch")
+        user_id, org_id = user.id, org.id
+    token = create_token(user_id, org_id, role)
+    return {"access_token": token, "token_type": "bearer", "org_id": org_id, "user_id": user_id, "role": role}
 
 
 @router.post("/events", dependencies=[Depends(_require_auth)])

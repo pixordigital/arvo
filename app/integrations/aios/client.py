@@ -17,6 +17,9 @@ PATH_PREFIX = "/api/integrations/arvo/v1"
 _TIMEOUT = 5.0
 _RETRIES = 3
 
+_CLIENT: httpx.AsyncClient | None = None
+_CLIENT_BASE: str | None = None
+
 
 def _headers(method: str, path: str, body: bytes | None = None) -> dict[str, str]:
     return sign_request(
@@ -24,25 +27,35 @@ def _headers(method: str, path: str, body: bytes | None = None) -> dict[str, str
     )
 
 
+async def _get_client() -> httpx.AsyncClient:
+    global _CLIENT, _CLIENT_BASE
+    base = settings.aios_base_url
+    if _CLIENT is None or _CLIENT_BASE != base:
+        old = _CLIENT
+        _CLIENT = httpx.AsyncClient(base_url=base, timeout=_TIMEOUT)
+        _CLIENT_BASE = base
+        if old is not None and hasattr(old, "aclose"):
+            await old.aclose()
+    return _CLIENT
+
+
 async def _request_with_retry(method: str, path: str, **kw) -> httpx.Response:
     if not settings.aios_base_url:
         raise RuntimeError("AIOS integration not configured (aios_base_url)")
     headers_factory = kw.pop("headers_factory", None)
+    c = await _get_client()
     last_exc: Exception | None = None
     for attempt in range(_RETRIES):
         try:
             request_kw = dict(kw)
             if headers_factory:
                 request_kw["headers"] = headers_factory()
-            async with httpx.AsyncClient(
-                base_url=settings.aios_base_url, timeout=_TIMEOUT
-            ) as c:
-                r = await c.request(method, path, **request_kw)
-                if r.status_code >= 500 or r.status_code == 429:
-                    raise httpx.HTTPStatusError(
-                        f"retryable {r.status_code}", request=r.request, response=r
-                    )
-                return r
+            r = await c.request(method, path, **request_kw)
+            if r.status_code >= 500 or r.status_code == 429:
+                raise httpx.HTTPStatusError(
+                    f"retryable {r.status_code}", request=r.request, response=r
+                )
+            return r
         except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
             last_exc = e
             if attempt < _RETRIES - 1:
@@ -91,7 +104,9 @@ async def list_deals(org_id: str, limit: int = 100) -> dict:
     if not org_id:
         return {"org_id": None, "deals": [], "count": 0}
     path = f"{PATH_PREFIX}/deals"
-    url = f"{path}?org_id={org_id}&limit={int(limit)}"
-    r = await _request_with_retry("GET", url, headers=_headers("GET", path))
+    r = await _request_with_retry(
+        "GET", path, params={"org_id": org_id, "limit": int(limit)},
+        headers=_headers("GET", path),
+    )
     r.raise_for_status()
     return r.json()

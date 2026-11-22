@@ -97,9 +97,11 @@ async def add_member(inp: MemberIn, ctx=Depends(get_current_user)):
     if ctx["membership"].role not in ("OWNER", "ADMIN"):
         raise HTTPException(403, "Need OWNER/ADMIN")
     from app.core.limits import check_org_limits
-    from app.database.models import ALL_ROLES
+    from app.database.models import ALL_ROLES, ROLE_ORDER
     if inp.role not in ALL_ROLES:
         raise HTTPException(400, f"Invalid role; use one of {ALL_ROLES}")
+    if ROLE_ORDER[inp.role] > ROLE_ORDER[ctx["membership"].role]:
+        raise HTTPException(403, "Cannot assign higher role")
     ok, err, _ = await check_org_limits(ctx["membership"].org_id, "users")
     if not ok: raise HTTPException(402, err)
     async with get_sessionmaker()() as s:

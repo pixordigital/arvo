@@ -40,10 +40,9 @@ if _static.exists():
     app.mount("/static", StaticFiles(directory=str(_static)), name="static")
 
 # CORS
-_origins = ["*"]
 if settings.cors_origins:
     _origins = [o.strip() for o in settings.cors_origins.split(",")]
-elif not settings.debug:
+else:
     _origins = [settings.app_url.rstrip("/")]
 app.add_middleware(
     CORSMiddleware,
@@ -116,7 +115,8 @@ async def abuse_guard(request: Request, call_next):
             return JSONResponse(status_code=403, content={"detail": "Cross-origin request rejected"})
 
         auth_write = request.url.path.startswith("/api/v1/auth/") or request.url.path in ("/login", "/register")
-        if auth_write:
+        sso_ticket = request.url.path == "/api/v1/integrations/aios/v1/sso-ticket"
+        if auth_write or sso_ticket:
             key = f"arvo:ratelimit:{_client_ip(request)}:{request.url.path}"
             if await _hit_count(key, 60) > settings.rate_limit_per_minute:
                 return JSONResponse(
@@ -134,6 +134,11 @@ async def security_headers(request: Request, call_next):
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
+        "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; "
+        "font-src 'self'; connect-src 'self'"
+    )
     if request.url.scheme == "https":
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return resp
@@ -158,7 +163,7 @@ async def health_ready():
     checks: dict = {}
     ok = True
     if not settings.debug and settings.is_sqlite:
-        checks["db"] = "rejected: sqlite dialect with debug=false"
+        checks["db"] = "down"
         ok = False
     else:
         try:
@@ -166,33 +171,27 @@ async def health_ready():
             checks["db"] = "ok" if await check_db() else "down"
             if checks["db"] != "ok":
                 ok = False
-        except Exception as e:
-            checks["db"] = f"error: {e}"
+        except Exception:
+            checks["db"] = "down"
             ok = False
     try:
-        import redis.asyncio as aioredis
-        if settings.redis_url:
-            r = aioredis.from_url(settings.redis_url, socket_connect_timeout=2)
-            try:
-                await r.ping()
-                checks["redis"] = "ok"
-            finally:
-                await r.aclose()
+        client = await _redis_client()
+        if client is not None:
+            await client.ping()
+            checks["redis"] = "ok"
         else:
-            checks["redis"] = "not_configured"
+            checks["redis"] = "down"
             ok = False
-    except Exception as e:
-        checks["redis"] = f"unavailable: {e}"
+    except Exception:
+        checks["redis"] = "down"
         ok = False
-    checks["llm_provider"] = settings.llm_provider
-    checks["supabase_studio"] = settings.supabase_studio_url
     code = 200 if ok else 503
     return JSONResponse(status_code=code, content={"status": "ready" if ok else "not_ready", "checks": checks})
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "0.1.0", "app": settings.app_name, "port": 9777, "studio": settings.supabase_studio_url}
+    return {"status": "ok", "version": "0.1.0", "app": settings.app_name, "port": 9777}
 
 
 def run():
