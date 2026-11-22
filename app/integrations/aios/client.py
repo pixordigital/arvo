@@ -34,7 +34,7 @@ async def _get_client() -> httpx.AsyncClient:
         old = _CLIENT
         _CLIENT = httpx.AsyncClient(base_url=base, timeout=_TIMEOUT)
         _CLIENT_BASE = base
-        if old is not None and hasattr(old, "aclose"):
+        if old is not None:
             await old.aclose()
     return _CLIENT
 

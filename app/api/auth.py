@@ -5,7 +5,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.database.engine import get_sessionmaker
 from app.database.models import User, Organization, Membership
-from app.core.security import hash_password, verify_password, create_token
+from app.core.security import hash_password, verify_password, create_token, normalize_email
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -19,10 +19,7 @@ class RegisterIn(BaseModel):
     @field_validator("email")
     @classmethod
     def valid_email(cls, v: str) -> str:
-        v = v.strip().lower()
-        if "@" not in v or "." not in v.split("@")[-1]:
-            raise ValueError("invalid email")
-        return v
+        return normalize_email(v)
 
     @field_validator("password")
     @classmethod

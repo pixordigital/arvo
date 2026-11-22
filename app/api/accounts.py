@@ -8,6 +8,7 @@ from app.database.models import CONTACT_ROLES, Account, Contact
 from app.api.deps import get_current_user, pagination
 from app.api.ingest import parse_account_rows
 from app.core.limits import check_org_limits
+from app.core.security import normalize_email
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -60,10 +61,7 @@ class ContactIn(BaseModel):
     def valid_email(cls, v: str | None) -> str | None:
         if v is None or not v.strip():
             return None
-        v = v.strip().lower()
-        if "@" not in v or "." not in v.split("@")[-1]:
-            raise ValueError("invalid email")
-        return v
+        return normalize_email(v)
 
     @field_validator("role")
     @classmethod

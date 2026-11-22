@@ -93,24 +93,8 @@ async def audit_job(ctx, job_id: str):
     return await _run_audit(job_id)
 
 def _redis_settings() -> RedisSettings:
-    """SASL: merge redis_url + redis_username/password se URL sem credenciais. Normaliza user '' → None."""
-    url = settings.redis_url or "redis://localhost:6379/0"
-    # se password separado e URL sem senha, injeta
-    if settings.redis_password and "@" not in url.split("://", 1)[-1].split("/")[0]:
-        from urllib.parse import urlparse, urlunparse
-        p = urlparse(url)
-        user = settings.redis_username or p.username or ""
-        # monta netloc com SASL
-        auth = ""
-        if user and settings.redis_password:
-            auth = f"{user}:{settings.redis_password}@"
-        elif settings.redis_password:
-            auth = f":{settings.redis_password}@"
-        elif user:
-            auth = f"{user}@"
-        netloc = f"{auth}{p.hostname or 'localhost'}:{p.port or 6379}"
-        url = urlunparse((p.scheme, netloc, p.path or "/0", "", "", ""))
-    s = RedisSettings.from_dsn(url)
+    """Redis DSN com credenciais na URL; normaliza user '' → None."""
+    s = RedisSettings.from_dsn(settings.redis_url or "redis://localhost:6379/0")
     # ponytail: SASL user '' → None; ceiling = single default Redis user, upgrade when ACL needs per-user AUTH
     if s.username == "":
         s.username = None

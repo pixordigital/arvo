@@ -5,6 +5,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.database.engine import get_sessionmaker
 from app.database.models import OPP_STAGES, Opportunity, Account
+from app.api.financial import _currency
 from app.api.deps import get_current_user, pagination
 from app.services.financial import D, money
 
@@ -47,10 +48,7 @@ class OppIn(BaseModel):
     @field_validator("currency")
     @classmethod
     def valid_currency(cls, v: str) -> str:
-        v = v.strip().upper()
-        if len(v) != 3 or not v.isalpha():
-            raise ValueError("currency must be a 3-letter code")
-        return v
+        return _currency(v)
 
 @router.get("")
 async def list_opps(page=Depends(pagination), ctx=Depends(get_current_user)):

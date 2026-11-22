@@ -91,27 +91,6 @@ class Opportunity(Base, TimestampMixin, OrgScopedMixin):
     extra_data: Mapped[dict] = mapped_column(SA_JSON, default=dict)
     account = relationship("Account", back_populates="opportunities")
 
-# ── Conversations / Messages ── (canonical from ingest)
-class Conversation(Base, TimestampMixin, OrgScopedMixin):
-    __tablename__ = "conversations"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
-    opportunity_id: Mapped[str | None] = mapped_column(ForeignKey("opportunities.id", ondelete="SET NULL"), nullable=True)
-    channel: Mapped[str] = mapped_column(String(50), default="MANUAL")  # EMAIL|MEETING|MANUAL|CRM
-    subject: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    extra_data: Mapped[dict] = mapped_column(SA_JSON, default=dict)
-    messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
-
-class Message(Base, TimestampMixin, OrgScopedMixin):
-    __tablename__ = "messages"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
-    role: Mapped[str] = mapped_column(String(20), default="user")  # user | assistant | system
-    content: Mapped[str] = mapped_column(Text)
-    channel: Mapped[str] = mapped_column(String(50), default="MANUAL")
-    provenance: Mapped[dict] = mapped_column(SA_JSON, default=dict)  # source, raw_id, ingest
-    conversation = relationship("Conversation", back_populates="messages")
-
 # ── Ingest provenance stub ──
 class RawRecord(Base, TimestampMixin, OrgScopedMixin):
     __tablename__ = "raw_records"

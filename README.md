@@ -19,14 +19,15 @@ uvicorn app.main:app --host 0.0.0.0 --port 9777 --reload
 ## Docker
 
 ```bash
-POSTGRES_PASSWORD=$(openssl rand -hex 24) docker compose up --build -d
-# postgres (dados em volume nomeado postgres-data), redis, migrate (one-shot),
-# web:9777, worker. A aplicação não guarda estado local: escala horizontalmente.
+ARVO_DATABASE_URL='postgresql+asyncpg://user:pass@host:5432/arvo' ARVO_REDIS_PASSWORD=$(openssl rand -hex 16) docker compose up --build -d
+# redis (dados em volume nomeado redis-data), migrate (one-shot), web:9777, worker.
+# Postgres não é subido pelo compose: ARVO_DATABASE_URL é obrigatório (externo/Supabase).
+# A aplicação não guarda estado local: escala horizontalmente.
 # Migrations: serviço `migrate` roda `alembic upgrade head` uma vez antes do
 # web/worker subirem (ARVO_SKIP_MIGRATIONS=1 neles).
 ```
 
-Sem Docker (dev local) o padrão é SQLite (`sqlite+aiosqlite:///./arvo.db`); defina `ARVO_DATABASE_URL` para usar Postgres. Em produção aponte `ARVO_DATABASE_URL` para Supabase Postgres; SQLite e o serviço `postgres` do compose são defaults de dev/local, não DB de produção.
+Sem Docker (dev local) o padrão é SQLite (`sqlite+aiosqlite:///./arvo.db`); defina `ARVO_DATABASE_URL` para usar Postgres. Em produção aponte `ARVO_DATABASE_URL` para Supabase Postgres; SQLite é default de dev/local, não DB de produção (compose não sobe Postgres).
 
 ## Coolify deploy
 

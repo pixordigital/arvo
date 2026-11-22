@@ -315,17 +315,6 @@ async def get_execution(exec_id: str):
     if db_cached is not None:
         _store_idempotent(exec_id, db_cached)
         return db_cached
-    # also try direct IntegrationEvent lookup
-    try:
-        from app.database.engine import get_sessionmaker
-        from app.database.models import IntegrationEvent
-
-        async with get_sessionmaker()() as s:
-            obj = await s.get(IntegrationEvent, exec_id)
-            if obj:
-                return obj.response
-    except Exception as e:
-        logger.debug("get_execution fallback: %s", e)
     raise HTTPException(404, "Execution not found")
 
 

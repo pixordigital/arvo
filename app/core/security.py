@@ -1,24 +1,28 @@
 """ARVO — Security: JWT + bcrypt + capability guard."""
 
+import bcrypt
 import jwt
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, status
 from app.core.config import settings
 
-try:
-    import bcrypt as _bcrypt
-    def hash_password(p: str) -> str:
-        return _bcrypt.hashpw(p.encode()[:72], _bcrypt.gensalt()).decode()
-    def verify_password(p: str, h: str) -> bool:
-        try:
-            return _bcrypt.checkpw(p.encode()[:72], h.encode())
-        except Exception:
-            return False
-except ImportError:
-    from passlib.context import CryptContext
-    _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    def hash_password(p: str) -> str: return _pwd.hash(p[:72])
-    def verify_password(p, h) -> bool: return _pwd.verify(p[:72], h)
+
+def hash_password(p: str) -> str:
+    return bcrypt.hashpw(p.encode()[:72], bcrypt.gensalt()).decode()
+
+
+def verify_password(p: str, h: str) -> bool:
+    try:
+        return bcrypt.checkpw(p.encode()[:72], h.encode())
+    except Exception:
+        return False
+
+
+def normalize_email(v: str) -> str:
+    v = v.strip().lower()
+    if "@" not in v or "." not in v.split("@")[-1]:
+        raise ValueError("invalid email")
+    return v
 
 def create_token(sub: str, org_id: str, role: str) -> str:
     now = datetime.now(timezone.utc)
