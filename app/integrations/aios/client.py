@@ -39,17 +39,26 @@ async def _get_client() -> httpx.AsyncClient:
     return _CLIENT
 
 
-async def _request_with_retry(method: str, path: str, **kw) -> httpx.Response:
+async def _request_with_retry(
+    method: str,
+    path: str,
+    *,
+    body: bytes | None = None,
+    extra_headers: dict[str, str] | None = None,
+    **kw,
+) -> httpx.Response:
     if not settings.aios_base_url:
         raise RuntimeError("AIOS integration not configured (aios_base_url)")
-    headers_factory = kw.pop("headers_factory", None)
     c = await _get_client()
     last_exc: Exception | None = None
     for attempt in range(_RETRIES):
         try:
+            headers = _headers(method, path, body)
+            headers.update(extra_headers or {})
             request_kw = dict(kw)
-            if headers_factory:
-                request_kw["headers"] = headers_factory()
+            request_kw["headers"] = headers
+            if body is not None:
+                request_kw["content"] = body
             r = await c.request(method, path, **request_kw)
             if r.status_code >= 500 or r.status_code == 429:
                 raise httpx.HTTPStatusError(
@@ -68,7 +77,7 @@ async def _request_with_retry(method: str, path: str, **kw) -> httpx.Response:
 async def ping() -> dict:
     """GET /health do peer. Usa http:// pois sslip https 503 (GAPS §6). Retry 3×."""
     path = f"{PATH_PREFIX}/health"
-    r = await _request_with_retry("GET", path, headers=_headers("GET", path))
+    r = await _request_with_retry("GET", path)
     r.raise_for_status()
     return r.json()
 
@@ -86,14 +95,10 @@ async def send_event(
     path = f"{PATH_PREFIX}/events"
     key = idempotency_key or str(uuid.uuid4())
 
-    def headers_factory():
-        headers = _headers("POST", path, body)
-        headers["Idempotency-Key"] = key
-        headers["Content-Type"] = "application/json"
-        return headers
-
     r = await _request_with_retry(
-        "POST", path, content=body, headers_factory=headers_factory
+        "POST", path,
+        body=body,
+        extra_headers={"Idempotency-Key": key, "Content-Type": "application/json"},
     )
     r.raise_for_status()
     return r.json()
@@ -105,8 +110,7 @@ async def list_deals(org_id: str, limit: int = 100) -> dict:
         return {"org_id": None, "deals": [], "count": 0}
     path = f"{PATH_PREFIX}/deals"
     r = await _request_with_retry(
-        "GET", path, params={"org_id": org_id, "limit": int(limit)},
-        headers=_headers("GET", path),
+        "GET", path, params={"org_id": org_id, "limit": int(limit)}
     )
     r.raise_for_status()
     return r.json()

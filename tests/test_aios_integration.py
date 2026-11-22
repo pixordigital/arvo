@@ -110,6 +110,41 @@ async def test_event_retry_uses_fresh_hmac_nonce(monkeypatch):
     assert len(nonces) == 2 and nonces[0] != nonces[1]
 
 
+async def test_ping_retry_signs_fresh_nonce_without_body(monkeypatch):
+    """GET retry must re-sign: same nonce would be rejected as replay."""
+    import httpx
+    from app.core.config import settings
+    from app.integrations.aios import client
+
+    calls = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def request(self, method, path, **kwargs):
+            request = httpx.Request(method, f"http://peer.test{path}")
+            calls.append((path, kwargs))
+            if len(calls) == 1:
+                raise httpx.ConnectError("timeout", request=request)
+            return httpx.Response(200, request=request, json={"status": "ok"})
+
+    async def no_sleep(delay):
+        return None
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(client, "_CLIENT", None)
+    monkeypatch.setattr("app.integrations.aios.client.asyncio.sleep", no_sleep)
+    monkeypatch.setattr(settings, "aios_base_url", "http://peer.test")
+    monkeypatch.setattr(settings, "aios_service_key_id", "kid")
+    monkeypatch.setattr(settings, "aios_service_key", "secret")
+    assert await client.ping() == {"status": "ok"}
+    assert len(calls) == 2
+    assert calls[0][1]["headers"]["X-Service-Nonce"] != calls[1][1]["headers"]["X-Service-Nonce"]
+    assert all(path == "/api/integrations/arvo/v1/health" for path, _ in calls)
+    assert all("content" not in kw for _, kw in calls)
+
+
 def test_events_idempotency():
     import json
     from fastapi.testclient import TestClient
@@ -559,20 +594,14 @@ async def test_list_deals_uses_full_versioned_path(monkeypatch):
     async def fake_request(method, path, **kw):
         seen["path"] = path
         seen["params"] = kw.get("params")
+        seen["prebuilt_headers"] = "headers" in kw
         return FakeResp()
 
-    real_headers = client._headers
-
-    def spy_headers(method, path, body=None):
-        seen["sign_path"] = path
-        return real_headers(method, path, body)
-
     monkeypatch.setattr(client, "_request_with_retry", fake_request)
-    monkeypatch.setattr(client, "_headers", spy_headers)
     await client.list_deals("org-1", limit=7)
     assert seen["path"] == "/api/integrations/arvo/v1/deals"
     assert seen["params"] == {"org_id": "org-1", "limit": 7}
-    assert seen["sign_path"] == "/api/integrations/arvo/v1/deals"
+    assert seen["prebuilt_headers"] is False
 
 
 # ── Regression: business_trace_id in outbound signed body ───────────────────
@@ -592,20 +621,27 @@ async def test_outbox_business_trace_id_in_signed_body(monkeypatch):
     captured = {}
 
     class FakeResp:
+        status_code = 200
+
         def raise_for_status(self):
             pass
 
         def json(self):
             return {"status": "ok"}
 
-    async def fake_request(method, path, **kw):
-        captured["method"] = method
-        captured["path"] = path
-        captured["content"] = kw["content"]
-        captured["headers"] = kw["headers_factory"]()
-        return FakeResp()
+    class FakeClient:
+        async def request(self, method, path, **kw):
+            captured["method"] = method
+            captured["path"] = path
+            captured["content"] = kw["content"]
+            captured["headers"] = kw["headers"]
+            return FakeResp()
 
-    monkeypatch.setattr(client, "_request_with_retry", fake_request)
+    async def fake_get_client():
+        return FakeClient()
+
+    monkeypatch.setattr(client, "_get_client", fake_get_client)
+    monkeypatch.setattr(settings, "aios_base_url", "http://peer.test")
     monkeypatch.setattr(settings, "aios_service_key_id", "kid-trace")
     monkeypatch.setattr(settings, "aios_service_key", "secret-trace")
     _clear_nonces()
@@ -648,20 +684,27 @@ async def test_send_event_omits_trace_when_none(monkeypatch):
     captured = {}
 
     class FakeResp:
+        status_code = 200
+
         def raise_for_status(self):
             pass
 
         def json(self):
             return {"status": "ok"}
 
-    async def fake_request(method, path, **kw):
-        captured["method"] = method
-        captured["path"] = path
-        captured["content"] = kw["content"]
-        captured["headers"] = kw["headers_factory"]()
-        return FakeResp()
+    class FakeClient:
+        async def request(self, method, path, **kw):
+            captured["method"] = method
+            captured["path"] = path
+            captured["content"] = kw["content"]
+            captured["headers"] = kw["headers"]
+            return FakeResp()
 
-    monkeypatch.setattr(client, "_request_with_retry", fake_request)
+    async def fake_get_client():
+        return FakeClient()
+
+    monkeypatch.setattr(client, "_get_client", fake_get_client)
+    monkeypatch.setattr(settings, "aios_base_url", "http://peer.test")
     monkeypatch.setattr(settings, "aios_service_key_id", "kid-none")
     monkeypatch.setattr(settings, "aios_service_key", "secret-none")
     _clear_nonces()

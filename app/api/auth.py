@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.database.engine import get_sessionmaker
-from app.database.models import User, Organization, Membership
-from app.core.security import hash_password, verify_password, create_token, normalize_email
+from app.database.models import User, Membership
+from app.core.security import verify_password, create_token, normalize_email
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -43,19 +43,12 @@ class LoginIn(BaseModel):
 
 @router.post("/register")
 async def register(inp: RegisterIn):
+    from app.services.auth_service import create_org_with_owner
     async with get_sessionmaker()() as s:
-        if (await s.execute(select(User).where(User.email==inp.email))).scalar_one_or_none():
-            raise HTTPException(400, "Email exists")
-        if (await s.execute(select(Organization).where(Organization.slug==inp.org_slug))).scalar_one_or_none():
-            raise HTTPException(400, "Slug exists")
-        org = Organization(name=inp.org_name, slug=inp.org_slug)
-        s.add(org); await s.flush()
-        user = User(email=inp.email, hashed_password=hash_password(inp.password))
-        s.add(user); await s.flush()
-        mem = Membership(org_id=org.id, user_id=user.id, role="OWNER")
-        s.add(mem); await s.commit()
-        tok = create_token(user.id, org.id, "OWNER")
-        return {"access_token": tok, "token_type":"bearer", "org_id": org.id, "user_id": user.id}
+        tok, org_id, user_id = await create_org_with_owner(
+            s, inp.email, inp.password, inp.org_name, inp.org_slug, "Email exists", "Slug exists"
+        )
+    return {"access_token": tok, "token_type": "bearer", "org_id": org_id, "user_id": user_id}
 
 @router.post("/login")
 async def login(inp: LoginIn):
@@ -88,21 +81,9 @@ async def list_members(ctx=Depends(get_current_user)):
 
 @router.post("/members")
 async def add_member(inp: MemberIn, ctx=Depends(get_current_user)):
-    if ctx["membership"].role not in ("OWNER", "ADMIN"):
-        raise HTTPException(403, "Need OWNER/ADMIN")
-    from app.core.limits import check_org_limits
-    from app.database.models import ALL_ROLES, ROLE_ORDER
-    if inp.role not in ALL_ROLES:
-        raise HTTPException(400, f"Invalid role; use one of {ALL_ROLES}")
-    if ROLE_ORDER[inp.role] > ROLE_ORDER[ctx["membership"].role]:
-        raise HTTPException(403, "Cannot assign higher role")
-    ok, err, _ = await check_org_limits(ctx["membership"].org_id, "users")
-    if not ok: raise HTTPException(402, err)
-    async with get_sessionmaker()() as s:
-        user = (await s.execute(select(User).where(User.email==inp.email))).scalar_one_or_none()
-        if not user: raise HTTPException(404, "User not found; they must register first")
-        existing = (await s.execute(select(Membership).where(Membership.user_id==user.id, Membership.org_id==ctx["membership"].org_id))).scalar_one_or_none()
-        if existing: raise HTTPException(400, "User already in org")
-        m = Membership(org_id=ctx["membership"].org_id, user_id=user.id, role=inp.role)
-        s.add(m); await s.commit(); await s.refresh(m)
-        return {"id": m.id, "user_id": user.id, "role": m.role}
+    from app.services.auth_service import add_org_member
+    m = await add_org_member(
+        ctx["membership"].org_id, ctx["membership"].role, inp.email, inp.role,
+        "Cannot assign higher role",
+    )
+    return {"id": m.id, "user_id": m.user_id, "role": m.role}

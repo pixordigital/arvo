@@ -5,6 +5,20 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import Numeric, String, case, cast, func, select
+
+from app.core.config import PLANS, settings
+from app.core.limits import check_org_limits, plan_for_org, plan_limits
+from app.core.security import create_token, decode_token, verify_password
+from app.database.engine import get_sessionmaker
+from app.database.models import (
+    Account, Action, Finding, FindingEvidence, FinancialEvent, FinancialLedger,
+    Membership, OPP_STAGES, Opportunity, Organization, RawRecord, User, has_capability,
+)
+from app.integrations.crm.base import ADAPTERS
+from app.services.action_service import transition_action
+from app.services.auth_service import add_org_member, create_org_with_owner
+from app.services.financial import D, idempotency_key, money
 
 router = APIRouter()
 
@@ -61,8 +75,6 @@ BOTTOM_NAV = [
 
 
 def _ctx(title: str, active: str, extra: dict | None = None, request: Request | None = None) -> dict:
-    from app.core.config import settings
-
     theme = "dark"
     if request:
         theme = request.cookies.get("arvo-theme", "dark")
@@ -88,12 +100,6 @@ def _login_redirect() -> HTTPException:
 
 async def _optional_org(request: Request) -> dict | None:
     """Resolve the active org from the auth cookie; None when not authenticated."""
-    from sqlalchemy import select
-
-    from app.core.security import decode_token
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Membership, User
-
     tok = request.cookies.get("arvo_token") or request.cookies.get("aios_token")
     if not tok:
         return None
@@ -127,8 +133,6 @@ async def _require_org(request: Request) -> dict:
 
 
 def _set_session(resp: RedirectResponse, token: str, request: Request) -> RedirectResponse:
-    from app.core.config import settings
-
     secure = request.url.scheme == "https" or settings.https_only
     resp.set_cookie(
         "arvo_token", token, httponly=True, samesite="strict", secure=secure, max_age=3600
@@ -138,12 +142,6 @@ def _set_session(resp: RedirectResponse, token: str, request: Request) -> Redire
 
 async def _stats(org_id: str | None) -> dict:
     """Read-only org metrics. No org means true zeros, never demo data."""
-    from sqlalchemy import Numeric, case, cast, func, select
-
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Account, Finding, FinancialLedger, Opportunity
-    from app.services.financial import money
-
     stats = {
         "accounts": 0,
         "opps": 0,
@@ -199,8 +197,6 @@ async def _stats(org_id: str | None) -> dict:
 
 @router.get("/", response_class=HTMLResponse)
 async def home_root(request: Request):
-    from app.core.config import PLANS
-
     auth = await _optional_org(request)
     stats = await _stats(auth["org_id"] if auth else None)
     return templates.TemplateResponse(
@@ -215,8 +211,6 @@ async def home(request: Request):
 
 @router.get("/pricing", response_class=HTMLResponse)
 async def pricing(request: Request):
-    from app.core.config import PLANS
-
     return templates.TemplateResponse(
         request, "pages/pricing.html", _ctx("Pricing", "pricing", {"plans": PLANS}, request)
     )
@@ -229,12 +223,6 @@ async def login_page(request: Request):
 
 @router.post("/login", response_class=HTMLResponse)
 async def login_post(request: Request, email: str = Form(...), password: str = Form(...)):
-    from sqlalchemy import select
-
-    from app.core.security import create_token, verify_password
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Membership, User
-
     async with get_sessionmaker()() as s:
         user = (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
         if not user or not verify_password(password, user.hashed_password):
@@ -279,12 +267,6 @@ async def register_post(
 ):
     import re
 
-    from sqlalchemy import select
-
-    from app.core.security import create_token, hash_password
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Membership, Organization, User
-
     email = email.strip().lower()
     org_slug = org_slug.strip().lower()
 
@@ -306,30 +288,13 @@ async def register_post(
         return _bad("Nome da organização obrigatório")
     org_name = org_name.strip()[:255]
 
-    async with get_sessionmaker()() as s:
-        if (await s.execute(select(User).where(User.email == email))).scalar_one_or_none():
-            return templates.TemplateResponse(
-                request,
-                "pages/register.html",
-                _ctx("Register", "register", {"error": "Email já existe"}, request),
-                status_code=400,
+    try:
+        async with get_sessionmaker()() as s:
+            tok, _, _ = await create_org_with_owner(
+                s, email, password, org_name, org_slug, "Email já existe", "Slug já existe"
             )
-        if (await s.execute(select(Organization).where(Organization.slug == org_slug))).scalar_one_or_none():
-            return templates.TemplateResponse(
-                request,
-                "pages/register.html",
-                _ctx("Register", "register", {"error": "Slug já existe"}, request),
-                status_code=400,
-            )
-        org = Organization(name=org_name, slug=org_slug)
-        s.add(org)
-        await s.flush()
-        user = User(email=email, hashed_password=hash_password(password))
-        s.add(user)
-        await s.flush()
-        s.add(Membership(org_id=org.id, user_id=user.id, role="OWNER"))
-        await s.commit()
-        tok = create_token(user.id, org.id, "OWNER")
+    except HTTPException as e:
+        return _bad(e.detail)
     return _set_session(RedirectResponse(url="/control-center", status_code=302), tok, request)
 
 
@@ -353,11 +318,6 @@ async def control_center(request: Request):
 
 @router.get("/findings", response_class=HTMLResponse)
 async def findings(request: Request):
-    from sqlalchemy import select
-
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Finding
-
     auth = await _require_org(request)
     async with get_sessionmaker()() as s:
         rows = (
@@ -387,11 +347,6 @@ async def findings(request: Request):
 
 @router.get("/deals", response_class=HTMLResponse)
 async def deals(request: Request):
-    from sqlalchemy import select
-
-    from app.database.engine import get_sessionmaker
-    from app.database.models import OPP_STAGES, Account, Opportunity
-
     auth = await _require_org(request)
     async with get_sessionmaker()() as s:
         rows = (
@@ -429,11 +384,6 @@ async def deals(request: Request):
 
 @router.get("/accounts", response_class=HTMLResponse)
 async def accounts(request: Request):
-    from sqlalchemy import select
-
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Account
-
     auth = await _require_org(request)
     type_filter = request.query_params.get("type")
     if type_filter not in ("PROSPECT", "CUSTOMER"):
@@ -459,10 +409,6 @@ async def accounts_create(
     type: str = Form("CUSTOMER"),
 ):
     from datetime import datetime, timezone
-
-    from app.core.limits import check_org_limits
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Account
 
     auth = await _require_org(request)
     name = name.strip()
@@ -494,10 +440,6 @@ async def accounts_create(
 async def accounts_import(request: Request, file: UploadFile = File(...)):
     import csv
     import io
-
-    from app.core.limits import check_org_limits
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Account, RawRecord
 
     auth = await _require_org(request)
     data = await file.read()
@@ -542,10 +484,6 @@ async def deals_create(
     stage: str = Form("PROSPECTING"),
     currency: str = Form("BRL"),
 ):
-    from app.database.engine import get_sessionmaker
-    from app.database.models import OPP_STAGES, Account, Opportunity
-    from app.services.financial import D, money
-
     auth = await _require_org(request)
     name = name.strip()
     currency = currency.strip().upper()
@@ -589,11 +527,6 @@ async def findings_create(
     exposure_amount: str = Form("0"),
     description: str = Form(""),
 ):
-    from app.core.limits import check_org_limits
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Finding, FinancialEvent
-    from app.services.financial import D, idempotency_key, money
-
     auth = await _require_org(request)
     title = title.strip()
     if not title:
@@ -638,9 +571,6 @@ async def findings_create(
 async def action_transition(
     request: Request, aid: str, transition: str, verified_amount: str = Form("0")
 ):
-    from app.database.models import has_capability
-    from app.services.action_service import transition_action
-
     auth = await _require_org(request)
     if transition not in ("approve", "execute", "verify"):
         raise HTTPException(404)
@@ -667,11 +597,6 @@ async def financial_impact(request: Request):
 
 @router.get("/actions", response_class=HTMLResponse)
 async def actions(request: Request):
-    from sqlalchemy import select
-
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Action
-
     auth = await _require_org(request)
     async with get_sessionmaker()() as s:
         rows = (
@@ -693,11 +618,6 @@ async def actions(request: Request):
 
 @router.get("/evidence", response_class=HTMLResponse)
 async def evidence(request: Request):
-    from sqlalchemy import String, cast, func, select
-
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Finding, FindingEvidence
-
     auth = await _require_org(request)
     try:
         limit = min(max(int(request.query_params.get("limit", 20)), 1), 100)
@@ -775,13 +695,6 @@ async def evidence(request: Request):
 
 @router.get("/integrations", response_class=HTMLResponse)
 async def integrations(request: Request):
-    from sqlalchemy import func, select
-
-    from app.core.config import settings
-    from app.database.engine import get_sessionmaker
-    from app.database.models import RawRecord
-    from app.integrations.crm.base import ADAPTERS
-
     auth = await _require_org(request)
     has_key = {
         "hubspot": bool(settings.hubspot_api_key),
@@ -819,49 +732,15 @@ async def integrations(request: Request):
 async def settings_add_member(
     request: Request, email: str = Form(...), role: str = Form("VIEWER")
 ):
-    from sqlalchemy import select
-
-    from app.core.limits import check_org_limits
-    from app.database.engine import get_sessionmaker
-    from app.database.models import ALL_ROLES, ROLE_ORDER, Membership, User
-
     auth = await _require_org(request)
-    if auth["role"] not in ("OWNER", "ADMIN"):
-        raise HTTPException(403, "Need OWNER/ADMIN")
-    if role not in ALL_ROLES:
-        raise HTTPException(400, f"Invalid role; use one of {ALL_ROLES}")
-    if ROLE_ORDER[role] > ROLE_ORDER[auth["role"]]:
-        raise HTTPException(403, "Cannot assign a role above your own")
-    ok, err, _ = await check_org_limits(auth["org_id"], "users")
-    if not ok:
-        raise HTTPException(402, err)
-    async with get_sessionmaker()() as s:
-        user = (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
-        if not user:
-            raise HTTPException(404, "User not found; they must register first")
-        existing = (
-            await s.execute(
-                select(Membership).where(
-                    Membership.user_id == user.id, Membership.org_id == auth["org_id"]
-                )
-            )
-        ).scalar_one_or_none()
-        if existing:
-            raise HTTPException(400, "User already in org")
-        s.add(Membership(org_id=auth["org_id"], user_id=user.id, role=role))
-        await s.commit()
+    await add_org_member(
+        auth["org_id"], auth["role"], email, role, "Cannot assign a role above your own"
+    )
     return RedirectResponse(url="/settings", status_code=302)
 
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
-    from sqlalchemy import func, select
-
-    from app.core.config import PLANS, settings
-    from app.core.limits import plan_for_org, plan_limits
-    from app.database.engine import get_sessionmaker
-    from app.database.models import Account, Finding, Membership, Organization, User
-
     auth = await _require_org(request)
     async with get_sessionmaker()() as s:
         org = await s.get(Organization, auth["org_id"])
