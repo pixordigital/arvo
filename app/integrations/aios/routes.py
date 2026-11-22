@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from . import auth as _auth
 from .auth import _forget_nonce, verify_request
+from .events import AiosEvent
 
 logger = logging.getLogger(__name__)
 
@@ -154,18 +155,11 @@ async def _db_release_event(key: str) -> None:
             await db.commit()
 
 
-class AiosEvent(BaseModel):
-    type: str = Field(..., max_length=64, pattern=r"^[a-z0-9_.-]+$")
-    payload: dict = Field(default_factory=dict)
-    occurred_at: str | None = None
-    business_trace_id: str | None = Field(default=None, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
-    event_version: str | None = Field(default="1", max_length=16)
-
-
 class AgentExecutionRequest(BaseModel):
     finding_id: str | None = None
     opportunity_id: str | None = None
     action: str | None = None
+    org_id: str | None = None
     payload: dict = Field(default_factory=dict)
     business_trace_id: str | None = Field(default=None, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
 
@@ -246,13 +240,27 @@ async def create_agent_execution(body: AgentExecutionRequest):
     if not body.opportunity_id:
         raise HTTPException(400, "opportunity_id required")
 
-    from app.database.engine import get_sessionmaker
-    from app.database.models import IntegrationEvent, Opportunity
+    from sqlalchemy import select
 
+    from app.database.engine import get_sessionmaker
+    from app.database.models import IntegrationEvent, Opportunity, Organization
+
+    peer_org = body.org_id or body.payload.get("org_id")
+    if not peer_org:
+        raise HTTPException(400, "org_id required for agent execution")
     async with get_sessionmaker()() as session:
         opportunity = await session.get(Opportunity, body.opportunity_id)
-    if not opportunity:
-        raise HTTPException(404, "opportunity not found")
+        if not opportunity:
+            raise HTTPException(404, "opportunity not found")
+        org = await session.get(Organization, str(peer_org))
+        if org is None:
+            org = (await session.execute(select(Organization).where(Organization.slug == str(peer_org)))).scalar_one_or_none()
+        if org is None:
+            raise HTTPException(404, "org not found")
+        if opportunity.org_id != org.id:
+            raise HTTPException(403, "opportunity org mismatch")
+        if not _org_allowed(org, peer_org):
+            raise HTTPException(403, "AIOS org not allowed")
 
     exec_id = str(uuid.uuid4())
     trace_id = (
@@ -348,26 +356,85 @@ async def _handle_agent_action_completed(payload: dict, trace_id: str | None) ->
     """Phase 4 slice: agent.action.completed → associa evidence ao finding, recalcula mínimo."""
     finding_id = payload.get("finding_id") or payload.get("opportunity_id") or payload.get("id")
     if not finding_id:
-        return {"handled": False, "reason": "no finding_id"}
+        return {"handled": False, "reason": "no finding_id", "recalculated": False}
     try:
+        from sqlalchemy import select
+
         from app.database.engine import get_sessionmaker
-        from app.database.models import Finding, FindingEvidence
+        from app.database.models import Finding, FindingEvidence, FinancialEvent, FinancialLedger
+        from app.services.financial import D, idempotency_key, money
+
+        amount_field = next(
+            (f for f in ("verified_amount", "recovery_amount", "exposure_amount") if f in payload),
+            None,
+        )
+        amount = None
+        if amount_field is not None and isinstance(payload[amount_field], str):
+            try:
+                parsed = D(payload[amount_field])
+                if parsed.is_finite() and parsed > 0:
+                    amount = money(parsed)
+            except Exception:
+                amount = None
 
         async with get_sessionmaker()() as s:
             finding = await s.get(Finding, str(finding_id))
             if not finding:
-                return {"handled": False, "reason": "finding not found"}
+                return {"handled": False, "reason": "finding not found", "recalculated": False}
             if str(payload.get("org_id") or "") != str(finding.org_id):
                 raise HTTPException(403, "org_id mismatch for agent.action.completed")
-            # Phase 5: persist trace in provenance
-            if trace_id and isinstance(finding.provenance, dict):
-                prov = dict(finding.provenance)
+            result = {
+                "handled": "agent.action.completed",
+                "finding_id": str(finding_id),
+                "business_trace_id": trace_id,
+                "recalculated": amount is not None,
+            }
+            prov = dict(finding.provenance) if isinstance(finding.provenance, dict) else {}
+            if trace_id:
                 prov["business_trace_id"] = trace_id
+            if amount is not None:
+                if amount_field == "exposure_amount":
+                    finding.exposure_amount = amount
+                else:
+                    key = idempotency_key(finding.org_id, "aios_action_completed", finding.id)[:100]
+                    existing = (
+                        await s.execute(
+                            select(FinancialEvent).where(
+                                FinancialEvent.org_id == finding.org_id,
+                                FinancialEvent.idempotency_key == key,
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if existing is None:
+                        fe = FinancialEvent(
+                            org_id=finding.org_id,
+                            kind="RECOVERED",
+                            amount=amount,
+                            currency="BRL",
+                            idempotency_key=key,
+                            provenance={"source": "aios", "event": "agent.action.completed", "business_trace_id": trace_id},
+                        )
+                        s.add(fe)
+                        await s.flush()
+                        s.add(
+                            FinancialLedger(
+                                org_id=finding.org_id,
+                                event_id=fe.id,
+                                entry_type="VERIFIED",
+                                amount=amount,
+                                currency="BRL",
+                                description=f"AIOS recalculation for finding {finding.id}",
+                            )
+                        )
+                prov[amount_field] = amount
+                result[amount_field] = amount
+            if trace_id or amount is not None:
                 finding.provenance = prov
             ev = FindingEvidence(finding_id=finding.id, kind="EVIDENCE", content={"business_trace_id": trace_id, "payload": payload, "source": "agent.action.completed"})
             s.add(ev)
             await s.commit()
-            return {"handled": "agent.action.completed", "finding_id": str(finding_id), "business_trace_id": trace_id, "evidence_id": ev.id}
+            result["evidence_id"] = ev.id
+            return result
     except HTTPException:
         raise
     except Exception:

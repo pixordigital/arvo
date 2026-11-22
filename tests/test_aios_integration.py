@@ -245,7 +245,7 @@ async def test_agent_execution_status_tracks_deal_audit_job(monkeypatch):
             await session.commit()
 
         create_path = "/api/v1/integrations/aios/v1/agent-executions"
-        body = json.dumps({"opportunity_id": opp_id, "action": "audit"}, separators=(",", ":")).encode()
+        body = json.dumps({"opportunity_id": opp_id, "org_id": org_id, "action": "audit"}, separators=(",", ":")).encode()
         hdr = sign_request("POST", create_path, body, "kid-exec", "secret-exec")
         nonces.append(hdr["X-Service-Nonce"])
         hdr["Content-Type"] = "application/json"
@@ -925,3 +925,287 @@ async def test_send_event_omits_trace_when_none(monkeypatch):
         "secret-none",
     )
     _clear_nonces()
+
+
+# ── Phase 4: recalculation on agent.action.completed ────────────────────────
+
+
+async def _post_aios_event(c, body: dict, key: str, nonces: list, kid="kid-recalc", secret="secret-recalc"):
+    import json
+
+    path = "/api/v1/integrations/aios/v1/events"
+    raw = json.dumps(body, separators=(",", ":")).encode()
+    hdr = sign_request("POST", path, raw, kid, secret)
+    nonces.append(hdr["X-Service-Nonce"])
+    hdr["Idempotency-Key"] = key
+    hdr["Content-Type"] = "application/json"
+    return c.post(path, content=raw, headers=hdr)
+
+
+async def test_agent_action_completed_recalculates_once(monkeypatch):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete, func, select
+
+    from app.core.config import settings
+    from app.database.engine import get_sessionmaker
+    from app.database.models import (
+        FinancialEvent,
+        FinancialLedger,
+        Finding,
+        FindingEvidence,
+        IntegrationEvent,
+        IntegrationNonce,
+        Organization,
+    )
+    from app.integrations.aios.routes import _clear_events
+    from app.main import app
+
+    org = f"org-recalc-{uuid.uuid4().hex[:8]}"
+    finding_id = f"finding-recalc-{uuid.uuid4().hex[:8]}"
+    keys = [uuid.uuid4().hex, uuid.uuid4().hex]
+    nonces: list[str] = []
+    monkeypatch.setattr(settings, "aios_integration_enabled", True)
+    monkeypatch.setattr(settings, "aios_service_key_id", "kid-recalc")
+    monkeypatch.setattr(settings, "aios_service_key", "secret-recalc")
+    _clear_nonces()
+    _clear_events()
+    c = TestClient(app)
+    try:
+        async with get_sessionmaker()() as session:
+            session.add(Organization(id=org, name="Recalc Org", slug=org))
+            session.add(
+                Finding(
+                    id=finding_id, org_id=org, kind="LEAKAGE", status="DETECTED",
+                    title="Recalc finding", exposure_amount="1000.00",
+                )
+            )
+            await session.commit()
+
+        payload = {"org_id": org, "finding_id": finding_id, "verified_amount": "250.00"}
+        first = await _post_aios_event(c, {"type": "agent.action.completed", "payload": payload}, keys[0], nonces)
+        assert first.status_code == 200, first.text
+        body = first.json()
+        assert body["recalculated"] is True
+        assert body["verified_amount"] == "250.00"
+
+        replay = await _post_aios_event(c, {"type": "agent.action.completed", "payload": payload}, keys[0], nonces)
+        assert replay.json()["deduplicated"] is True
+
+        # Different idempotency key: handler runs again but must not double-count.
+        again = await _post_aios_event(c, {"type": "agent.action.completed", "payload": payload}, keys[1], nonces)
+        assert again.json()["verified_amount"] == "250.00"
+
+        async with get_sessionmaker()() as session:
+            count = (
+                await session.execute(
+                    select(func.count(FinancialEvent.id)).where(FinancialEvent.org_id == org)
+                )
+            ).scalar()
+            ledger = (
+                await session.execute(select(FinancialLedger).where(FinancialLedger.org_id == org))
+            ).scalars().all()
+            finding = await session.get(Finding, finding_id)
+        assert count == 1
+        assert len(ledger) == 1 and ledger[0].amount == "250.00"
+        assert finding.exposure_amount == "1000.00"  # untouched by verified_amount
+        assert (finding.provenance or {}).get("verified_amount") == "250.00"
+    finally:
+        _clear_nonces()
+        _clear_events()
+        async with get_sessionmaker()() as session:
+            for key in keys:
+                row = await session.get(IntegrationEvent, key)
+                if row:
+                    await session.delete(row)
+            await session.execute(delete(FinancialLedger).where(FinancialLedger.org_id == org))
+            await session.execute(delete(FinancialEvent).where(FinancialEvent.org_id == org))
+            await session.execute(delete(FindingEvidence).where(FindingEvidence.finding_id == finding_id))
+            await session.execute(delete(Finding).where(Finding.org_id == org))
+            await session.execute(delete(Organization).where(Organization.id == org))
+            for nonce in nonces:
+                await session.execute(delete(IntegrationNonce).where(IntegrationNonce.nonce == nonce))
+            await session.commit()
+
+
+async def test_agent_action_completed_without_amount_is_noop(monkeypatch):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete, func, select
+
+    from app.core.config import settings
+    from app.database.engine import get_sessionmaker
+    from app.database.models import (
+        FinancialEvent,
+        FinancialLedger,
+        Finding,
+        FindingEvidence,
+        IntegrationEvent,
+        IntegrationNonce,
+        Organization,
+    )
+    from app.integrations.aios.routes import _clear_events
+    from app.main import app
+
+    org = f"org-noamt-{uuid.uuid4().hex[:8]}"
+    finding_id = f"finding-noamt-{uuid.uuid4().hex[:8]}"
+    key = uuid.uuid4().hex
+    nonces: list[str] = []
+    monkeypatch.setattr(settings, "aios_integration_enabled", True)
+    monkeypatch.setattr(settings, "aios_service_key_id", "kid-noamt")
+    monkeypatch.setattr(settings, "aios_service_key", "secret-noamt")
+    _clear_nonces()
+    _clear_events()
+    c = TestClient(app)
+    try:
+        async with get_sessionmaker()() as session:
+            session.add(Organization(id=org, name="NoAmt Org", slug=org))
+            session.add(
+                Finding(
+                    id=finding_id, org_id=org, kind="LEAKAGE", status="DETECTED",
+                    title="No amount finding", exposure_amount="500.00",
+                )
+            )
+            await session.commit()
+
+        r = await _post_aios_event(
+            c,
+            {"type": "agent.action.completed", "payload": {"org_id": org, "finding_id": finding_id}},
+            key,
+            nonces,
+            kid="kid-noamt",
+            secret="secret-noamt",
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["recalculated"] is False
+        assert "verified_amount" not in body and "exposure_amount" not in body
+
+        async with get_sessionmaker()() as session:
+            fe = (
+                await session.execute(
+                    select(func.count(FinancialEvent.id)).where(FinancialEvent.org_id == org)
+                )
+            ).scalar()
+            fl = (
+                await session.execute(
+                    select(func.count(FinancialLedger.id)).where(FinancialLedger.org_id == org)
+                )
+            ).scalar()
+            finding = await session.get(Finding, finding_id)
+        assert fe == 0 and fl == 0
+        assert finding.exposure_amount == "500.00"
+    finally:
+        _clear_nonces()
+        _clear_events()
+        async with get_sessionmaker()() as session:
+            row = await session.get(IntegrationEvent, key)
+            if row:
+                await session.delete(row)
+            await session.execute(delete(FindingEvidence).where(FindingEvidence.finding_id == finding_id))
+            await session.execute(delete(Finding).where(Finding.org_id == org))
+            await session.execute(delete(Organization).where(Organization.id == org))
+            for nonce in nonces:
+                await session.execute(delete(IntegrationNonce).where(IntegrationNonce.nonce == nonce))
+            await session.commit()
+
+
+# ── Phase 2: signed service routes map peer org to opportunity org ──────────
+
+
+async def test_agent_execution_rejects_tenant_mismatch(monkeypatch):
+    import json
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete
+
+    from app.core.config import settings
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Account, IntegrationNonce, Opportunity, Organization
+    from app.integrations.aios.routes import _clear_events
+    from app.main import app
+
+    org_a = f"org-tenant-a-{uuid.uuid4().hex[:8]}"
+    org_b = f"org-tenant-b-{uuid.uuid4().hex[:8]}"
+    account_id = f"acc-tenant-{uuid.uuid4().hex[:8]}"
+    opp_id = f"opp-tenant-{uuid.uuid4().hex[:8]}"
+    nonces: list[str] = []
+    monkeypatch.setattr(settings, "aios_integration_enabled", True)
+    monkeypatch.setattr(settings, "aios_service_key_id", "kid-tenant")
+    monkeypatch.setattr(settings, "aios_service_key", "secret-tenant")
+    monkeypatch.setattr(settings, "aios_allowed_orgs", "")
+    _clear_nonces()
+    _clear_events()
+    c = TestClient(app)
+    path = "/api/v1/integrations/aios/v1/agent-executions"
+    try:
+        async with get_sessionmaker()() as session:
+            session.add(Organization(id=org_a, name="Tenant A", slug=org_a))
+            session.add(Organization(id=org_b, name="Tenant B", slug=org_b))
+            session.add(Account(id=account_id, org_id=org_a, name="Tenant Account"))
+            session.add(Opportunity(id=opp_id, org_id=org_a, account_id=account_id, name="Tenant Opp"))
+            await session.commit()
+
+        def post(body: dict):
+            raw = json.dumps(body, separators=(",", ":")).encode()
+            hdr = sign_request("POST", path, raw, "kid-tenant", "secret-tenant")
+            nonces.append(hdr["X-Service-Nonce"])
+            hdr["Content-Type"] = "application/json"
+            return c.post(path, content=raw, headers=hdr)
+
+        # Peer claims org B but opportunity belongs to org A.
+        r = post({"opportunity_id": opp_id, "org_id": org_b, "action": "audit"})
+        assert r.status_code == 403, r.text
+
+        # Missing peer org ref is rejected before any queue work.
+        r2 = post({"opportunity_id": opp_id, "action": "audit"})
+        assert r2.status_code == 400, r2.text
+    finally:
+        _clear_nonces()
+        _clear_events()
+        async with get_sessionmaker()() as session:
+            await session.execute(delete(Opportunity).where(Opportunity.org_id == org_a))
+            await session.execute(delete(Account).where(Account.org_id == org_a))
+            for org in (org_a, org_b):
+                await session.execute(delete(Organization).where(Organization.id == org))
+            for nonce in nonces:
+                await session.execute(delete(IntegrationNonce).where(IntegrationNonce.nonce == nonce))
+            await session.commit()
+
+
+async def test_ingest_event_rejects_invalid_envelope(monkeypatch):
+    import json
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete
+
+    from app.core.config import settings
+    from app.database.engine import get_sessionmaker
+    from app.database.models import IntegrationNonce
+    from app.integrations.aios.routes import _clear_events
+    from app.main import app
+
+    path = "/api/v1/integrations/aios/v1/events"
+    nonces: list[str] = []
+    monkeypatch.setattr(settings, "aios_integration_enabled", True)
+    monkeypatch.setattr(settings, "aios_service_key_id", "kid-envbad")
+    monkeypatch.setattr(settings, "aios_service_key", "secret-envbad")
+    _clear_nonces()
+    _clear_events()
+    c = TestClient(app)
+    try:
+        for bad in (
+            {"type": "deal.created", "payload": {}, "event_version": "x" * 17},
+            {"type": "BAD TYPE!", "payload": {}},
+        ):
+            raw = json.dumps(bad, separators=(",", ":")).encode()
+            hdr = sign_request("POST", path, raw, "kid-envbad", "secret-envbad")
+            nonces.append(hdr["X-Service-Nonce"])
+            hdr["Idempotency-Key"] = uuid.uuid4().hex
+            hdr["Content-Type"] = "application/json"
+            assert c.post(path, content=raw, headers=hdr).status_code == 422
+    finally:
+        _clear_nonces()
+        _clear_events()
+        async with get_sessionmaker()() as session:
+            for nonce in nonces:
+                await session.execute(delete(IntegrationNonce).where(IntegrationNonce.nonce == nonce))
+            await session.commit()

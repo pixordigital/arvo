@@ -12,6 +12,8 @@ from app.core.config import settings
 from app.database.engine import get_sessionmaker
 from app.database.models import IntegrationEvent, IntegrationOutbox
 
+from .events import AiosEvent
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,14 +23,21 @@ async def enqueue_outbox(
     *,
     idempotency_key: str | None = None,
     business_trace_id: str | None = None,
+    event_version: str = "1",
     session=None,
 ) -> str:
+    envelope = AiosEvent(
+        type=event_type,
+        payload=payload,
+        business_trace_id=business_trace_id,
+        event_version=event_version,
+    )
     outbox_id = str(uuid.uuid4())
     row = IntegrationOutbox(
         id=outbox_id,
         peer="aios",
         event_type=event_type,
-        payload=payload,
+        payload={**envelope.payload, "event_version": envelope.event_version},
         business_trace_id=business_trace_id,
         idempotency_key=idempotency_key or outbox_id,
         status="pending",
@@ -168,6 +177,7 @@ async def _deliver(row: IntegrationOutbox, raise_errors: bool) -> bool:
             row.payload,
             idempotency_key=row.idempotency_key,
             business_trace_id=row.business_trace_id,
+            event_version=row.payload.get("event_version", "1"),
         )
     except Exception as error:
         retryable = (

@@ -12,6 +12,7 @@ import httpx
 from app.core.config import settings
 
 from .auth import sign_request
+from .events import AiosEvent
 
 PATH_PREFIX = "/api/integrations/arvo/v1"
 _TIMEOUT = 5.0
@@ -87,11 +88,15 @@ async def send_event(
     payload: dict,
     idempotency_key: str | None = None,
     business_trace_id: str | None = None,
+    event_version: str = "1",
 ) -> dict:
-    body_dict = {"type": event_type, "payload": payload}
-    if business_trace_id:
-        body_dict["business_trace_id"] = business_trace_id
-    body = json.dumps(body_dict, separators=(",", ":")).encode()
+    envelope = AiosEvent(
+        type=event_type,
+        payload={k: v for k, v in payload.items() if k != "event_version"},
+        business_trace_id=business_trace_id,
+        event_version=payload.get("event_version") or event_version,
+    )
+    body = json.dumps(envelope.model_dump(exclude_none=True), separators=(",", ":")).encode()
     path = f"{PATH_PREFIX}/events"
     key = idempotency_key or str(uuid.uuid4())
 
@@ -102,6 +107,9 @@ async def send_event(
     )
     r.raise_for_status()
     return r.json()
+
+
+post_event = send_event
 
 
 async def list_deals(org_id: str, limit: int = 100) -> dict:
