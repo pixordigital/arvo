@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime, timezone
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast, case, Numeric
 from app.database.engine import get_sessionmaker
 from app.database.models import Finding, FindingEvidence, Recommendation, Action, FinancialLedger, FinancialEvent
 from app.services.financial import D, idempotency_key, money
@@ -135,12 +135,25 @@ async def list_actions(page=Depends(pagination), ctx=Depends(get_current_user)):
 
 @router.get("/financial-impact")
 async def financial_impact(ctx=Depends(get_current_user)):
-    from app.services.financial import sum_amounts
+    org = ctx["membership"].org_id
     async with get_sessionmaker()() as s:
-        deb_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id==ctx["membership"].org_id, FinancialLedger.entry_type=="DEBIT"))).scalars().all()
-        exposure = sum_amounts(deb_vals)
-        ver_vals = (await s.execute(select(FinancialLedger.amount).where(FinancialLedger.org_id==ctx["membership"].org_id, FinancialLedger.entry_type=="VERIFIED"))).scalars().all()
-        verified = sum_amounts(ver_vals)
-        findings=(await s.execute(select(Finding).where(Finding.org_id==ctx["membership"].org_id))).scalars().all()
-        total_exp=sum_amounts([f.exposure_amount for f in findings])
-        return {"exposure_ledger": exposure, "verified": verified, "findings_exposure": total_exp, "findings_count": len(findings), "ledger_count": (await s.execute(select(func.count(FinancialLedger.id)).where(FinancialLedger.org_id==ctx["membership"].org_id))).scalar()}
+        exposure, verified, ledger_count = (await s.execute(
+            select(
+                func.coalesce(func.sum(case((FinancialLedger.entry_type == "DEBIT", cast(FinancialLedger.amount, Numeric)), else_=0)), 0),
+                func.coalesce(func.sum(case((FinancialLedger.entry_type == "VERIFIED", cast(FinancialLedger.amount, Numeric)), else_=0)), 0),
+                func.count(FinancialLedger.id),
+            ).where(FinancialLedger.org_id == org)
+        )).one()
+        findings_exposure, findings_count = (await s.execute(
+            select(
+                func.coalesce(func.sum(cast(Finding.exposure_amount, Numeric)), 0),
+                func.count(Finding.id),
+            ).where(Finding.org_id == org)
+        )).one()
+        return {
+            "exposure_ledger": money(exposure),
+            "verified": money(verified),
+            "findings_exposure": money(findings_exposure),
+            "findings_count": findings_count,
+            "ledger_count": ledger_count,
+        }

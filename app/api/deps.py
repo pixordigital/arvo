@@ -1,7 +1,7 @@
 """ARVO — FastAPI deps: current_user + org + RLS injection."""
 
 from fastapi import Request, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.database.engine import get_sessionmaker
 from app.core.security import decode_token
 
@@ -29,14 +29,18 @@ async def get_current_user(request: Request):
         from app.database.models import User, Membership
         # RLS context for Supabase Postgres (no-op on sqlite)
         try:
-            from sqlalchemy import text
             await s.execute(text("SELECT set_config('app.current_org_id', :org, true)"), {"org": claims["org_id"]})
         except Exception:
             pass
-        user = await s.get(User, claims["sub"])
-        if not user or not user.is_active:
+        # One joined query. Outer join preserves distinct 401 (no/inactive user) vs 403 (no/inactive membership).
+        row = (await s.execute(
+            select(User, Membership)
+            .outerjoin(Membership, (Membership.user_id == User.id) & (Membership.org_id == claims["org_id"]))
+            .where(User.id == claims["sub"])
+        )).first()
+        if not row or not row[0] or not row[0].is_active:
             raise HTTPException(status_code=401, detail="User inactive")
-        m = (await s.execute(select(Membership).where(Membership.user_id==user.id, Membership.org_id==claims["org_id"]))).scalar_one_or_none()
+        user, m = row
         if not m or not m.is_active:
             raise HTTPException(status_code=403, detail="No membership")
         request.state.user_id = user.id

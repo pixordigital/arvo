@@ -131,7 +131,7 @@ def _set_session(resp: RedirectResponse, token: str, request: Request) -> Redire
 
     secure = request.url.scheme == "https" or settings.https_only
     resp.set_cookie(
-        "arvo_token", token, httponly=True, samesite="lax", secure=secure, max_age=3600
+        "arvo_token", token, httponly=True, samesite="strict", secure=secure, max_age=3600
     )
     return resp
 

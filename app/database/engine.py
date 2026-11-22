@@ -24,7 +24,11 @@ _default_session = None
 
 
 def _engine_for(url: str):
-    return create_async_engine(url, echo=settings.debug, pool_pre_ping=True)
+    kwargs = dict(echo=settings.debug, pool_pre_ping=True)
+    # SQLite uses NullPool; pool_size/max_overflow invalid there.
+    if not url.startswith("sqlite"):
+        kwargs.update(pool_size=5, max_overflow=5)
+    return create_async_engine(url, **kwargs)
 
 
 def get_engine():

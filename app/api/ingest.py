@@ -12,6 +12,23 @@ from app.core.limits import check_org_limits
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
+
+async def parse_account_rows(rows, org_id, name_keys, *, strip_filter=False, check_empty=False, validate=None):
+    """Named (row, name) pairs after accounts limit check; flags preserve caller edges."""
+    valid = []
+    for r in rows:
+        name = next((r.get(k) for k in name_keys if r.get(k)), None)
+        if (str(name or "").strip() if strip_filter else name):
+            valid.append((r, name))
+    if validate:
+        for r, _ in valid:
+            validate(r)
+    ok, err, _ = await check_org_limits(org_id, "accounts", delta=len(valid))
+    if not ok and (valid or check_empty):
+        raise HTTPException(402, err)
+    return valid
+
+
 @router.post("/csv")
 async def ingest_csv(file: UploadFile = File(...), ctx=Depends(get_current_user)):
     data = await file.read()
@@ -20,16 +37,13 @@ async def ingest_csv(file: UploadFile = File(...), ctx=Depends(get_current_user)
     text = data.decode("utf-8", errors="ignore")
     reader = csv.DictReader(io.StringIO(text))
     rows = list(reader)
-    valid = [r for r in rows if (r.get("name") or r.get("account_name") or r.get("company"))]
-    ok, err, usage = await check_org_limits(ctx["membership"].org_id, "accounts", delta=len(valid))
-    if not ok and valid: raise HTTPException(402, err)
+    valid = await parse_account_rows(rows, ctx["membership"].org_id, ("name", "account_name", "company"))
     async with get_sessionmaker()() as s:
         raw = RawRecord(org_id=ctx["membership"].org_id, source="CSV", source_id=file.filename, payload={"rows": rows, "filename": file.filename}, status="PENDING")
         s.add(raw)
         # Normalize → canonical: create accounts from rows with a name
         created=0
-        for r in valid:
-            name = r.get("name") or r.get("account_name") or r.get("company")
+        for r, name in valid:
             a = Account(org_id=ctx["membership"].org_id, name=name.strip()[:255], domain=(r.get("domain") or "").strip()[:255] or None, type="CUSTOMER", owner_id=ctx["user"].id, extra_data={"ingest":"csv","raw":r})
             s.add(a); created+=1
         raw.status="NORMALIZED"

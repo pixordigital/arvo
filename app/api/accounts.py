@@ -6,11 +6,18 @@ from sqlalchemy import select
 from app.database.engine import get_sessionmaker
 from app.database.models import CONTACT_ROLES, Account, Contact
 from app.api.deps import get_current_user, pagination
+from app.api.ingest import parse_account_rows
 from app.core.limits import check_org_limits
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 ACCOUNT_TYPES = ("CUSTOMER", "PROSPECT", "PARTNER")
+
+
+def _validate_csv_type(r):
+    t = str(r.get("type", "CUSTOMER")).strip().upper()
+    if t not in ACCOUNT_TYPES:
+        raise HTTPException(400, f"type must be one of {ACCOUNT_TYPES}")
 
 class AccountIn(BaseModel):
     name: str
@@ -107,17 +114,11 @@ async def add_contact(aid: str, inp: ContactIn, ctx=Depends(get_current_user)):
 async def import_csv(data: dict, ctx=Depends(get_current_user)):
     """Bulk import — MVP CSV/Upload endpoint. Expects {"rows":[{"name","domain"}]}."""
     rows = data.get("rows", [])
-    valid = [r for r in rows if str(r.get("name") or r.get("account_name") or "").strip()]
-    for r in valid:
-        t = str(r.get("type", "CUSTOMER")).strip().upper()
-        if t not in ACCOUNT_TYPES:
-            raise HTTPException(400, f"type must be one of {ACCOUNT_TYPES}")
-    ok, err, _ = await check_org_limits(ctx["membership"].org_id, "accounts", delta=len(valid))
-    if not ok: raise HTTPException(402, err)
+    valid = await parse_account_rows(rows, ctx["membership"].org_id, ("name", "account_name"), strip_filter=True, check_empty=True, validate=_validate_csv_type)
     async with get_sessionmaker()() as s:
         created=[]
-        for r in valid:
-            a=Account(org_id=ctx["membership"].org_id, name=(r.get("name") or r.get("account_name")).strip()[:255], domain=(r.get("domain") or "").strip() or None, type=str(r.get("type","CUSTOMER")).upper(), owner_id=ctx["user"].id, extra_data={"import":"csv"})
+        for r, name in valid:
+            a=Account(org_id=ctx["membership"].org_id, name=name.strip()[:255], domain=(r.get("domain") or "").strip() or None, type=str(r.get("type","CUSTOMER")).upper(), owner_id=ctx["user"].id, extra_data={"import":"csv"})
             s.add(a); created.append(a)
         await s.commit()
         for a in created: await s.refresh(a)

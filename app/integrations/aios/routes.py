@@ -538,6 +538,16 @@ async def consume_sso_ticket(request: Request, body: SsoTicketIn | None = None):
     return {"access_token": token, "token_type": "bearer", "org_id": org_id, "user_id": user_id, "role": role}
 
 
+@router.post("/outbox/flush", dependencies=[Depends(_require_auth)])
+async def flush_outbox_endpoint(outbox_id: str | None = None):
+    """HTTP trigger for outbox flush (replaces reliance on Coolify cron)."""
+    from app.integrations.aios.publisher import flush_outbox, integration_outbox_flush
+
+    if outbox_id:
+        return await integration_outbox_flush(None, outbox_id=outbox_id, batch=20)
+    return await flush_outbox(batch=20)
+
+
 @router.post("/events", dependencies=[Depends(_require_auth)])
 async def ingest_event(
     body: AiosEvent,

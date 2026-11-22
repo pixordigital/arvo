@@ -85,11 +85,8 @@ class MemberIn(BaseModel):
 async def list_members(ctx=Depends(get_current_user)):
     async with get_sessionmaker()() as s:
         rows = (await s.execute(select(Membership).where(Membership.org_id==ctx["membership"].org_id))).scalars().all()
-        out = []
-        for m in rows:
-            u = await s.get(User, m.user_id)
-            out.append({"user_id": m.user_id, "email": u.email if u else None, "role": m.role, "active": m.is_active})
-        return out
+        users = {u.id: u.email for u in (await s.execute(select(User).where(User.id.in_([m.user_id for m in rows])))).scalars().all()}
+        return [{"user_id": m.user_id, "email": users.get(m.user_id), "role": m.role, "active": m.is_active} for m in rows]
 
 
 @router.post("/members")

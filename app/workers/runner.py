@@ -111,7 +111,7 @@ def _redis_settings() -> RedisSettings:
         netloc = f"{auth}{p.hostname or 'localhost'}:{p.port or 6379}"
         url = urlunparse((p.scheme, netloc, p.path or "/0", "", "", ""))
     s = RedisSettings.from_dsn(url)
-    # ponytail: '' → None (AUTH default user usa só password, não user='')
+    # ponytail: SASL user '' → None; ceiling = single default Redis user, upgrade when ACL needs per-user AUTH
     if s.username == "":
         s.username = None
     return s

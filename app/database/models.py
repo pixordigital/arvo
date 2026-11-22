@@ -189,6 +189,10 @@ class FinancialLedger(Base, TimestampMixin, OrgScopedMixin):
     amount: Mapped[str] = mapped_column(String(50), default="0")
     currency: Mapped[str] = mapped_column(String(3), default="BRL")
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    __table_args__ = (
+        Index("ix_financial_ledger_event_id", "event_id"),
+        Index("ix_financial_ledger_org_entry_type", "org_id", "entry_type"),
+    )
 
 # Findings lifecycle — Spec §164 DETECTED→...→FINANCIALLY_VERIFIED
 FINDING_STATUSES = ["DETECTED","TRIAGED","VALIDATING","VALIDATED","ACTION_PLANNED","ACTION_APPROVED","ACTION_EXECUTED","RESOLVED","FINANCIALLY_VERIFIED","REJECTED"]
@@ -206,6 +210,7 @@ class Finding(Base, TimestampMixin, OrgScopedMixin):
     evidence_pack: Mapped[dict] = mapped_column(SA_JSON, default=dict)
     provenance: Mapped[dict] = mapped_column(SA_JSON, default=dict)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    __table_args__ = (Index("ix_findings_org_severity", "org_id", "severity"),)
     evidences = relationship("FindingEvidence", back_populates="finding", cascade="all, delete-orphan")
 
 class FindingEvidence(Base, TimestampMixin):
@@ -332,3 +337,4 @@ class IntegrationOutbox(Base, TimestampMixin):
     attempts: Mapped[int] = mapped_column(default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    __table_args__ = (Index("ix_integration_outbox_status_created_at", "status", "created_at"),)

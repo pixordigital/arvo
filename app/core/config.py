@@ -12,9 +12,6 @@ class Settings(BaseSettings):
 
     # DB
     database_url: str = "sqlite+aiosqlite:///./arvo.db"
-    supabase_url: str = ""
-    supabase_anon_key: str = ""
-    supabase_service_key: str = ""
     supabase_studio_url: str = "http://178.105.181.38:9771"
 
     # Redis / Workers — SASL (user:pass) via redis://user:pass@host:6379/0 ou rediss://
