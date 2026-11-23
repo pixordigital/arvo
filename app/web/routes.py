@@ -317,6 +317,7 @@ async def register_post(
 async def logout():
     resp = RedirectResponse(url="/login", status_code=302)
     resp.delete_cookie("arvo_token")
+    resp.delete_cookie("aios_token", path="/")
     return resp
 
 
