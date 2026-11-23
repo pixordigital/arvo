@@ -2,12 +2,13 @@
 
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
@@ -144,6 +145,23 @@ async def security_headers(request: Request, call_next):
     if request.url.scheme == "https":
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return resp
+
+
+@app.middleware("http")
+async def root_path_rewrite(request: Request, call_next):
+    prefix = request.scope.get("root_path", "")
+    resp = await call_next(request)
+    if not prefix:
+        return resp
+    location = resp.headers.get("location")
+    if location and location.startswith("/") and not location.startswith(prefix + "/"):
+        resp.headers["location"] = prefix + location
+    if not resp.headers.get("content-type", "").startswith("text/html"):
+        return resp
+    body = b"".join([chunk async for chunk in resp.body_iterator])
+    body = re.sub(rb'(href|action|src)="/', lambda m: m.group(1) + b'="' + prefix.encode() + b'/', body)
+    headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
+    return Response(content=body, status_code=resp.status_code, headers=headers, media_type="text/html")
 
 
 # API router
