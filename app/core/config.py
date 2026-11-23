@@ -1,5 +1,6 @@
 """ARVO — Settings. PRINCÍPIO VERDADE: limites reais só de PLANS + limits.py."""
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,6 +52,22 @@ class Settings(BaseSettings):
     aios_service_key_id: str = ""
     aios_service_key: str = ""
     aios_allowed_orgs: str = ""  # CSV de org ids/slugs AIOS permitidos (writes/SSO); vazio = sem restrição
+
+    @model_validator(mode="after")
+    def _check_public_app_url(self) -> "Settings":
+        if not self.debug:
+            msg = (
+                "ARVO_APP_URL must be the public AIOS HTTPS origin "
+                "(set ARVO_APP_URL=https://aios.seudominio.com when ARVO_DEBUG=false); "
+                f"got {self.app_url!r}."
+            )
+            if not self.app_url or not self.app_url.strip():
+                raise ValueError(msg)
+            if not self.app_url.startswith("https://"):
+                raise ValueError(msg)
+            if ":9777" in self.app_url:
+                raise ValueError(msg)
+        return self
 
     @property
     def is_sqlite(self) -> bool:

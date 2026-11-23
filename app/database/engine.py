@@ -8,6 +8,7 @@ scripted jobs) must not share a pool across loops.
 import asyncio
 import weakref
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
@@ -26,9 +27,17 @@ _default_session = None
 def _engine_for(url: str):
     kwargs = dict(echo=settings.debug, pool_pre_ping=True)
     # SQLite uses NullPool; pool_size/max_overflow invalid there.
-    if not url.startswith("sqlite"):
+    is_sqlite = url.startswith("sqlite")
+    if not is_sqlite:
         kwargs.update(pool_size=5, max_overflow=5)
-    return create_async_engine(url, **kwargs)
+        if ":6543" in url:
+            kwargs["connect_args"] = {"statement_cache_size": 0}
+    engine = create_async_engine(url, **kwargs)
+    if not is_sqlite:
+        @event.listens_for(engine.sync_engine, "begin")
+        def set_search_path(conn):
+            conn.exec_driver_sql("SET LOCAL search_path TO arvo")
+    return engine
 
 
 def get_engine():

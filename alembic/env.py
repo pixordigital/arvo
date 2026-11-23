@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
 
 from alembic import context
 
@@ -24,6 +25,13 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+def _version_kwargs(url: str) -> dict:
+    kwargs = {"version_table": "alembic_version_arvo"}
+    if "sqlite" not in url:
+        kwargs["version_table_schema"] = "arvo"
+    return kwargs
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -37,11 +45,15 @@ def run_migrations_offline() -> None:
 
     """
     url = config.get_main_option("sqlalchemy.url")
+    if "sqlite" not in url:
+        context.execute("CREATE SCHEMA IF NOT EXISTS arvo;")
+        context.execute("SET search_path TO arvo;")
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        **_version_kwargs(url),
     )
 
     with context.begin_transaction():
@@ -59,11 +71,13 @@ def run_migrations_online() -> None:
 
     async def _run():
         async with connectable.connect() as connection:
-            await connection.run_sync(lambda conn: context.configure(connection=conn, target_metadata=target_metadata))
-            await connection.run_sync(lambda _: None)
+            if "sqlite" not in url:
+                await connection.execute(text("CREATE SCHEMA IF NOT EXISTS arvo"))
+                await connection.execute(text("SET search_path TO arvo"))
+                await connection.commit()
             # Use sync context via run_sync
             def do_migrate(conn):
-                context.configure(connection=conn, target_metadata=target_metadata)
+                context.configure(connection=conn, target_metadata=target_metadata, **_version_kwargs(url))
                 with context.begin_transaction():
                     context.run_migrations()
             await connection.run_sync(do_migrate)
@@ -80,7 +94,11 @@ def run_migrations_online() -> None:
             sync_url = sync_url.replace("sqlite+aiosqlite","sqlite")
         eng = create_engine(sync_url, poolclass=pool.NullPool)
         with eng.connect() as conn:
-            context.configure(connection=conn, target_metadata=target_metadata)
+            if "sqlite" not in sync_url:
+                conn.execute(text("CREATE SCHEMA IF NOT EXISTS arvo"))
+                conn.execute(text("SET search_path TO arvo"))
+                conn.commit()
+            context.configure(connection=conn, target_metadata=target_metadata, **_version_kwargs(sync_url))
             with context.begin_transaction():
                 context.run_migrations()
 

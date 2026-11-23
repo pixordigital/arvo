@@ -1,7 +1,7 @@
 """add perf indexes
 
-Revision ID: d4e5f6a7b8c9
-Revises: c2d3e4f5a6b7
+Revision ID: d4e5f6a7b8ca
+Revises: c2d3e4f5a6b8
 Create Date: 2026-11-22
 
 """
@@ -9,8 +9,8 @@ from typing import Sequence, Union
 
 from alembic import op
 
-revision: str = 'd4e5f6a7b8c9'
-down_revision: Union[str, Sequence[str], None] = 'c2d3e4f5a6b7'
+revision: str = 'd4e5f6a7b8ca'
+down_revision: Union[str, Sequence[str], None] = 'c2d3e4f5a6b8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

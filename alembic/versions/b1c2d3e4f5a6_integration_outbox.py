@@ -1,6 +1,6 @@
 """integration_outbox
 
-Revision ID: b1c2d3e4f5a6
+Revision ID: b1c2d3e4f5a7
 Revises: 53db6d830751
 Create Date: 2026-09-23
 
@@ -10,7 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = 'b1c2d3e4f5a6'
+revision: str = 'b1c2d3e4f5a7'
 down_revision: Union[str, Sequence[str], None] = '53db6d830751'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

@@ -1,6 +1,7 @@
 """ARVO — FastAPI + Jinja2. Deployment: 178.105.181.38:9777. AI interpreta. Python calcula."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -32,6 +33,7 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/openapi.json",
     lifespan=lifespan,
+    root_path=os.getenv("ARVO_ROOT_PATH", ""),
 )
 
 # Static — served at /static

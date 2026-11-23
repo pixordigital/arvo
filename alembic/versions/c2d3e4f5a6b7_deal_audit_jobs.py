@@ -1,7 +1,7 @@
 """deal audit jobs
 
-Revision ID: c2d3e4f5a6b7
-Revises: b1c2d3e4f5a6
+Revision ID: c2d3e4f5a6b8
+Revises: b1c2d3e4f5a7
 Create Date: 2026-11-18
 
 """
@@ -10,8 +10,8 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = 'c2d3e4f5a6b7'
-down_revision: Union[str, Sequence[str], None] = 'b1c2d3e4f5a6'
+revision: str = 'c2d3e4f5a6b8'
+down_revision: Union[str, Sequence[str], None] = 'b1c2d3e4f5a7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
