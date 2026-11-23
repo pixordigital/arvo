@@ -36,7 +36,7 @@ def _engine_for(url: str):
     if not is_sqlite:
         @event.listens_for(engine.sync_engine, "begin")
         def set_search_path(conn):
-            conn.exec_driver_sql("SET LOCAL search_path TO arvo")
+            conn.exec_driver_sql("SET LOCAL search_path TO arvo, public, extensions")
     return engine
 
 
