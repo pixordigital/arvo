@@ -117,10 +117,14 @@ async def abuse_guard(request: Request, call_next):
         if origin and origin.rstrip("/") not in allowed:
             return JSONResponse(status_code=403, content={"detail": "Cross-origin request rejected"})
 
-        auth_write = request.url.path.startswith("/api/v1/auth/") or request.url.path in ("/login", "/register")
-        sso_ticket = request.url.path == "/api/v1/integrations/aios/v1/sso-ticket"
+        path = request.url.path
+        root_path = request.scope.get("root_path", "")
+        if root_path and path.startswith(root_path):
+            path = path[len(root_path):] or "/"
+        auth_write = path.startswith("/api/v1/auth/") or path in ("/login", "/register")
+        sso_ticket = path == "/api/v1/integrations/aios/v1/sso-ticket"
         if auth_write or sso_ticket:
-            key = f"arvo:ratelimit:{_client_ip(request)}:{request.url.path}"
+            key = f"arvo:ratelimit:{_client_ip(request)}:{path}"
             if await _hit_count(key, 60) > settings.rate_limit_per_minute:
                 return JSONResponse(
                     status_code=429,
