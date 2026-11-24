@@ -6,7 +6,9 @@
   <p class="page-sub">Each stage and amount stays on record.</p>
 </div>
 <section>
-  {% if accounts %}
+  {% if aios_source_of_truth %}
+  <div class="card card-content mb-4"><p class="t-muted">Deals vêm do AIOS (fonte de verdade). Crie e edite no AIOS.</p></div>
+  {% elif accounts %}
   <form class="card card-content form-stack mb-4" method="post" action="/deals">
     <h2 class="card-title">Novo deal</h2>
     <div class="field"><label for="deal-account">Conta</label>
@@ -47,8 +49,12 @@
   <div class="card empty-card mt-4">
     <div class="empty-icon-ring"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg></div>
     <h3 class="empty-title">Nenhum deal</h3>
+    {% if aios_source_of_truth %}
+    <p class="empty-sub">Nenhum deal do AIOS para esta organização.</p>
+    {% else %}
     <p class="empty-sub">Nenhuma oportunidade no pipeline.</p>
     <a href="/accounts" class="btn btn-secondary pressable">Ver accounts</a>
+    {% endif %}
   </div>
   {% endif %}
 </section>

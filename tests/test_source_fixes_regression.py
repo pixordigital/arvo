@@ -239,3 +239,195 @@ def test_integration_reconcile_registered_in_worker_functions():
     from app.workers.runner import WorkerSettings, integration_reconcile
 
     assert integration_reconcile in WorkerSettings.functions
+
+
+# ── 7. nonce GC cron registration ────────────────────────────────────────────
+
+
+async def test_cleanup_expired_nonces_cron_registered_and_callable(monkeypatch):
+    import app.integrations.aios.routes as routes
+    from app.workers.runner import WorkerSettings, cleanup_expired_nonces
+
+    jobs = [j for j in WorkerSettings.cron_jobs if j.coroutine is cleanup_expired_nonces]
+    assert len(jobs) == 1
+    assert callable(jobs[0].coroutine)
+    assert jobs[0].minute == {0, 30}
+    assert jobs[0].second == 0
+
+    called = []
+
+    async def fake_gc():
+        called.append(True)
+        return 0
+
+    monkeypatch.setattr(routes, "cleanup_expired_nonces", fake_gc)
+    assert await cleanup_expired_nonces({}) == 0
+    assert called == [True]
+
+
+# ── 8. signed /events handlers set RLS org context before org-row access ────
+
+
+async def test_signed_event_handler_sets_rls_org_context(monkeypatch):
+    import app.database.engine as db
+    import app.integrations.aios.routes as routes
+
+    org_id = "org-signed-rls"
+    executed = []
+
+    class StopHandler(Exception):
+        pass
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def execute(self, stmt, params=None):
+            executed.append((str(stmt), params))
+            return None
+
+        async def get(self, *args):
+            raise StopHandler()
+
+    monkeypatch.setattr(db, "get_sessionmaker", lambda: FakeSession)
+
+    with pytest.raises(StopHandler):
+        await routes._handle_deal_event(
+            {"org_id": org_id, "deal_id": "deal-rls", "value": "100.00"},
+            "trace-rls",
+            "deal.created",
+        )
+
+    assert any(
+        "set_config('app.current_org_id'" in sql and params == {"org": org_id}
+        for sql, params in executed
+    ), executed
+
+
+# ── 9. GET /opportunities/{oid} follows AIOS source-of-truth flag ───────────
+
+
+async def test_opp_detail_follows_aios_source_of_truth(monkeypatch, tmp_path):
+    import app.database.engine as db
+    import app.integrations.aios.client as aios_client
+    from app.api import opportunities as opps
+    from app.core.config import settings
+    from app.database.engine import get_sessionmaker, init_db
+    from app.database.models import Account, Opportunity
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(settings, "database_url", f"sqlite+aiosqlite:///{tmp_path / 'opp_detail.db'}")
+    db._engines.clear()
+    db._sessions.clear()
+    db._default_engine = None
+    db._default_session = None
+    await init_db()
+
+    org_id = "org-opp-detail"
+    async with get_sessionmaker()() as s:
+        acc = Account(org_id=org_id, name="Local Detail Co")
+        s.add(acc)
+        await s.flush()
+        local = Opportunity(
+            org_id=org_id, account_id=acc.id, name="Local Only Deal",
+            stage="PROSPECTING", amount="10", currency="BRL",
+        )
+        s.add(local)
+        await s.commit()
+        await s.refresh(local)
+        local_id, acc_id = local.id, acc.id
+
+    from types import SimpleNamespace
+
+    ctx = {
+        "membership": SimpleNamespace(org_id=org_id),
+        "user": SimpleNamespace(id="user-opp-detail"),
+    }
+
+    calls = []
+
+    async def fake_list_deals(*, org_id, limit=100):
+        calls.append((org_id, limit))
+        return {
+            "org_id": org_id,
+            "count": 2,
+            "deals": [
+                {"id": "aios-deal-9", "lead_name": "AIOS Deal Detail",
+                 "stage": "PROPOSAL", "value": "77.70", "currency": "BRL"},
+                {"id": None, "lead_name": "Malformed Deal",
+                 "stage": "PROSPECTING", "value": "1", "currency": "BRL"},
+            ],
+        }
+
+    monkeypatch.setattr(aios_client, "list_deals", fake_list_deals)
+
+    # Flag off: local row served, peer untouched.
+    monkeypatch.setattr(settings, "aios_integration_enabled", False)
+    off = await opps.get_opp(local_id, ctx)
+    assert off["name"] == "Local Only Deal"
+    assert off["account_id"] == acc_id
+    assert calls == []
+
+    # Flag on: peer row in list shape; no account_id; malformed id skipped.
+    monkeypatch.setattr(settings, "aios_integration_enabled", True)
+    on = await opps.get_opp("aios-deal-9", ctx)
+    assert on == {
+        "id": "aios-deal-9", "name": "AIOS Deal Detail", "stage": "PROPOSAL",
+        "amount": "77.70", "currency": "BRL",
+    }
+    assert "account_id" not in on
+    assert calls and all(c[0] == org_id for c in calls)
+    assert [r["id"] for r in await opps._shared_deals(org_id, 10)] == ["aios-deal-9"]
+
+    # Local id exists in DB but absent from peer -> 404, no local fallback.
+    with pytest.raises(HTTPException) as ei:
+        await opps.get_opp(local_id, ctx)
+    assert ei.value.status_code == 404
+
+
+# ── 10. web deals page skips malformed peer ids ─────────────────────────────
+
+
+async def test_web_deals_skips_malformed_peer_ids(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import app.integrations.aios.client as aios_client
+    import app.main as main_module
+    import app.web.routes as web_routes
+    from app.core.config import settings
+
+    org_id = f"web-deals-{uuid.uuid4().hex}"
+
+    async def fake_require_org(request):
+        return {"org_id": org_id, "user_id": "web-deals-user", "role": "OWNER"}
+
+    async def fake_list_deals(*, org_id, limit=100):
+        return {
+            "org_id": org_id,
+            "count": 4,
+            "deals": [
+                {"id": "aios-web-ok", "lead_name": "Web Deal OK",
+                 "stage": "PROPOSAL", "value": "10", "currency": "BRL"},
+                {"id": None, "lead_name": "Malformed Null Deal",
+                 "stage": "PROPOSAL", "value": "1", "currency": "BRL"},
+                {"id": 42, "lead_name": "Malformed Int Deal",
+                 "stage": "PROPOSAL", "value": "1", "currency": "BRL"},
+                {"id": "", "lead_name": "Malformed Empty Deal",
+                 "stage": "PROPOSAL", "value": "1", "currency": "BRL"},
+            ],
+        }
+
+    monkeypatch.setattr(web_routes, "_require_org", fake_require_org)
+    monkeypatch.setattr(aios_client, "list_deals", fake_list_deals)
+    monkeypatch.setattr(settings, "aios_integration_enabled", True)
+
+    client = TestClient(main_module.app, raise_server_exceptions=False)
+    r = client.get("/deals")
+
+    assert r.status_code == 200, r.text
+    assert "Web Deal OK" in r.text
+    assert "aios-web" in r.text
+    assert "Malformed" not in r.text

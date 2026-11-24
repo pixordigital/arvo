@@ -1,5 +1,6 @@
 """ARVO Web — Jinja2 routes. Every data page is scoped to the authenticated org."""
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -21,6 +22,7 @@ from app.services.auth_service import add_org_member, create_org_with_owner
 from app.services.financial import D, idempotency_key, money
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
@@ -174,9 +176,25 @@ async def _stats(org_id: str | None) -> dict:
         stats["accounts"] = (
             await s.execute(select(func.count(Account.id)).where(Account.org_id == org_id))
         ).scalar() or 0
-        stats["opps"] = (
-            await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))
-        ).scalar() or 0
+        if settings.aios_integration_enabled:
+            from app.integrations.aios.client import list_deals
+
+            try:
+                # shortcut: AIOS caps reads at 500; count is capped by peer limit.
+                data = await list_deals(org_id=org_id, limit=500)
+                if not isinstance(data, dict) or data.get("error"):
+                    raise ValueError("invalid AIOS deals response")
+                deals = data.get("deals")
+                stats["opps"] = data.get("count")
+                if stats["opps"] is None:
+                    stats["opps"] = len(deals) if isinstance(deals, list) else 0
+            except Exception:
+                logger.exception("aios stats: list_deals failed org=%s", org_id)
+                stats["opps"] = 0
+        else:
+            stats["opps"] = (
+                await s.execute(select(func.count(Opportunity.id)).where(Opportunity.org_id == org_id))
+            ).scalar() or 0
         f_counts = (
             await s.execute(
                 select(
@@ -362,38 +380,82 @@ async def findings(request: Request):
     )
 
 
+async def _shared_deals(org_id: str, limit: int, offset: int = 0) -> list[dict]:
+    """AIOS CRM deals mapped to ARVO rows. Never falls back to local deals."""
+    from app.integrations.aios.client import list_deals
+
+    try:
+        # shortcut: AIOS caps reads at 500; deeper offsets stay empty until peer pagination exists.
+        data = await list_deals(org_id=org_id, limit=min(500, limit + offset))
+    except Exception:
+        logger.exception("aios deals: list_deals failed org=%s", org_id)
+        return []
+    if not isinstance(data, dict) or data.get("error"):
+        logger.warning(
+            "aios deals: peer error org=%s: %s",
+            org_id,
+            data.get("error") if isinstance(data, dict) else "invalid response",
+        )
+        return []
+    rows = data.get("deals") or []
+    if not isinstance(rows, list):
+        logger.warning("aios deals: invalid deals payload org=%s", org_id)
+        return []
+    return [
+        {
+            "id": d.get("id"),
+            "name": d.get("lead_name"),
+            "stage": d.get("stage"),
+            "amount": d.get("value"),
+            "currency": d.get("currency"),
+        }
+        for d in rows[offset : offset + limit]
+        # shortcut: skip rows with no usable id; templates slice o.id[:8] and would 500.
+        if isinstance(d, dict) and isinstance(d.get("id"), str) and d["id"]
+    ]
+
+
 @router.get("/deals", response_class=HTMLResponse)
 async def deals(request: Request):
     auth = await _require_org(request)
-    async with get_sessionmaker()() as s:
-        rows = (
-            await s.execute(
-                select(Opportunity)
-                .where(Opportunity.org_id == auth["org_id"])
-                .order_by(Opportunity.created_at.desc())
-                .limit(100)
-            )
-        ).scalars().all()
-        rows = [
-            {"id": r.id, "name": r.name, "stage": r.stage, "amount": r.amount, "currency": r.currency}
-            for r in rows
-        ]
-        accounts_list = (
-            await s.execute(
-                select(Account)
-                .where(Account.org_id == auth["org_id"])
-                .order_by(Account.name)
-                .limit(100)
-            )
-        ).scalars().all()
-        accounts_list = [{"id": a.id, "name": a.name} for a in accounts_list]
+    if settings.aios_integration_enabled:
+        rows = await _shared_deals(auth["org_id"], 100)
+        accounts_list: list[dict] = []
+    else:
+        async with get_sessionmaker()() as s:
+            rows = (
+                await s.execute(
+                    select(Opportunity)
+                    .where(Opportunity.org_id == auth["org_id"])
+                    .order_by(Opportunity.created_at.desc())
+                    .limit(100)
+                )
+            ).scalars().all()
+            rows = [
+                {"id": r.id, "name": r.name, "stage": r.stage, "amount": r.amount, "currency": r.currency}
+                for r in rows
+            ]
+            accounts_list = (
+                await s.execute(
+                    select(Account)
+                    .where(Account.org_id == auth["org_id"])
+                    .order_by(Account.name)
+                    .limit(100)
+                )
+            ).scalars().all()
+            accounts_list = [{"id": a.id, "name": a.name} for a in accounts_list]
     return templates.TemplateResponse(
         request,
         "pages/deals.html",
         _ctx(
             "Deals",
             "deals",
-            {"deals": rows, "accounts": accounts_list, "stages": OPP_STAGES},
+            {
+                "deals": rows,
+                "accounts": accounts_list,
+                "stages": OPP_STAGES,
+                "aios_source_of_truth": settings.aios_integration_enabled,
+            },
             request,
         ),
     )
@@ -502,6 +564,11 @@ async def deals_create(
     currency: str = Form("BRL"),
 ):
     auth = await _require_org(request)
+    if settings.aios_integration_enabled:
+        raise HTTPException(
+            409,
+            "Deals are managed in AIOS (source of truth); local creation is disabled while integration is enabled.",
+        )
     name = name.strip()
     currency = currency.strip().upper()
     if not name:
@@ -580,6 +647,25 @@ async def findings_create(
                 idempotency_key=idempotency_key(auth["org_id"], "finding", f.id),
             )
         )
+        if getattr(settings, "aios_integration_enabled", False):
+            from app.integrations.aios.publisher import enqueue_outbox
+
+            await enqueue_outbox(
+                "commitment.at_risk",
+                {
+                    "org_id": auth["org_id"],
+                    "finding_id": f.id,
+                    "kind": f.kind,
+                    "title": f.title,
+                    "severity": f.severity,
+                    "exposure_amount": f.exposure_amount,
+                    "currency": f.currency,
+                    "confidence": f.confidence,
+                },
+                business_trace_id=f.id,
+                idempotency_key=f.id,
+                session=s,
+            )
         await s.commit()
     return RedirectResponse(url="/findings", status_code=302)
 
@@ -597,6 +683,7 @@ async def action_transition(
     await transition_action(
         org_id=auth["org_id"], user_id=auth["user_id"], aid=aid,
         transition=transition, verified_amount=verified_amount,
+        publish_aios=True,
     )
     return RedirectResponse(url="/actions", status_code=302)
 

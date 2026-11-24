@@ -1,12 +1,13 @@
 """Outbox publisher — pending → HTTP to AIOS with retry."""
 
+import asyncio
 import logging
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import event, select, update
 
 from app.core.config import settings
 from app.database.engine import get_sessionmaker
@@ -15,6 +16,16 @@ from app.database.models import IntegrationEvent, IntegrationOutbox
 from .events import AiosEvent
 
 logger = logging.getLogger(__name__)
+
+
+async def _existing_outbox_id(key: str, session=None) -> str | None:
+    stmt = select(IntegrationOutbox).where(IntegrationOutbox.idempotency_key == key)
+    if session is not None:
+        existing = await session.scalar(stmt)
+    else:
+        async with get_sessionmaker()() as db:
+            existing = await db.scalar(stmt)
+    return existing.id if existing else None
 
 
 async def enqueue_outbox(
@@ -32,6 +43,12 @@ async def enqueue_outbox(
         business_trace_id=business_trace_id,
         event_version=event_version,
     )
+    key = idempotency_key
+    # shortcut: pre-check + unique index; concurrent inserts can still race to IntegrityError, caller retries
+    if key:
+        existing_id = await _existing_outbox_id(key, session)
+        if existing_id:
+            return existing_id
     outbox_id = str(uuid.uuid4())
     row = IntegrationOutbox(
         id=outbox_id,
@@ -39,12 +56,23 @@ async def enqueue_outbox(
         event_type=event_type,
         payload={**envelope.payload, "event_version": envelope.event_version},
         business_trace_id=business_trace_id,
-        idempotency_key=idempotency_key or outbox_id,
+        idempotency_key=key or outbox_id,
         status="pending",
     )
     if session is not None:
         session.add(row)
         await session.flush()
+
+        sync_session = getattr(session, "sync_session", None)
+        if sync_session is not None:
+            def _flush_after_commit(_session):
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    return
+                loop.create_task(schedule_flush(outbox_id))
+
+            event.listen(sync_session, "after_commit", _flush_after_commit, once=True)
         return outbox_id
     async with get_sessionmaker()() as db:
         db.add(row)
@@ -65,8 +93,9 @@ async def schedule_flush(outbox_id: str) -> None:
         pool = await create_pool(_redis_settings())
         await pool.enqueue_job("integration_outbox_flush_job", outbox_id)
     except Exception:
-        logger.debug(
-            "outbox %s immediate flush unavailable; cron will retry",
+        logger.warning(
+            "outbox %s immediate flush unavailable; fallback requires arq worker cron "
+            "OR external scheduler/manual flush; row remains pending",
             outbox_id[:8],
             exc_info=True,
         )

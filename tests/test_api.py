@@ -383,6 +383,29 @@ async def test_web_forms_create_and_move_action_to_verified():
     assert "R$ 500,00" in c.get("/financial-impact").text
 
 
+async def test_web_transitions_pass_publish_aios(client, monkeypatch):
+    import app.web.routes as web_routes
+
+    _, _, email = _register(client, "webpub")
+    captured = []
+
+    async def fake_transition(**kwargs):
+        captured.append(kwargs)
+        return {"id": kwargs["aid"], "status": "OK", "verified_amount": "0"}
+
+    monkeypatch.setattr(web_routes, "transition_action", fake_transition)
+    assert client.post("/login", data={"email": email, "password": "secret123"}).status_code == 302
+    for transition in ("approve", "execute", "verify"):
+        r = client.post(
+            f"/actions/pub-{transition}/{transition}",
+            data={"verified_amount": "10"},
+        )
+        assert r.status_code == 302, r.text
+        assert r.headers["location"] == "/actions"
+    assert {kw["transition"] for kw in captured} == {"approve", "execute", "verify"}
+    assert all(kw.get("publish_aios") is True for kw in captured)
+
+
 async def test_evidence_page_is_org_isolated():
     from app.core.security import create_token, hash_password
     from app.database.engine import get_sessionmaker
@@ -459,3 +482,144 @@ def test_limits_402_when_exceeded(client):
     # try create — should be 200 or 402, never 500
     ra = client.post("/api/v1/accounts", json={"name":"Limit Probe"}, headers={"Authorization": f"Bearer {tok}"})
     assert ra.status_code in (200, 402)
+
+
+def test_aios_source_of_truth_lists_use_aios(client, monkeypatch):
+    import app.integrations.aios.client as aios_client
+    from app.core.config import settings
+
+    tok, org, email = _register(client, "crmsrc")
+    calls = []
+
+    async def _fake_list_deals(*, org_id, limit=100):
+        calls.append((org_id, limit))
+        return {
+            "org_id": org_id,
+            "deals": [{
+                "id": "aios-deal-1",
+                "lead_name": "AIOS Source Deal",
+                "stage": "PROPOSAL",
+                "value": "123.45",
+                "currency": "BRL",
+            }],
+            "count": 1,
+        }
+
+    monkeypatch.setattr(settings, "aios_integration_enabled", True)
+    monkeypatch.setattr(aios_client, "list_deals", _fake_list_deals)
+
+    assert client.post("/login", data={"email": email, "password": "secret123"}).status_code == 302
+    web = client.get("/deals")
+    assert web.status_code == 200, web.text
+    assert "AIOS Source Deal" in web.text
+    assert "Novo deal" not in web.text
+    assert "fonte de verdade" in web.text
+
+    api = client.get("/api/v1/opportunities?limit=1", headers={"Authorization": f"Bearer {tok}"})
+    assert api.status_code == 200, api.text
+    assert api.json() == [{
+        "id": "aios-deal-1",
+        "name": "AIOS Source Deal",
+        "stage": "PROPOSAL",
+        "amount": "123.45",
+        "currency": "BRL",
+    }]
+    assert calls and all(c[0] == org for c in calls)
+
+
+async def test_aios_source_of_truth_blocks_local_creates(client, monkeypatch):
+    from sqlalchemy import select
+
+    from app.core.config import settings
+    from app.database.engine import get_sessionmaker
+    from app.database.models import Opportunity
+
+    tok, _, email = _register(client, "crmcreate")
+    h = {"Authorization": f"Bearer {tok}"}
+    acc = client.post("/api/v1/accounts", json={"name": "CRM Source Co"}, headers=h)
+    assert acc.status_code == 200, acc.text
+    acc_id = acc.json()["id"]
+
+    tag = uuid.uuid4().hex[:8]
+    local_api = f"Local API {tag}"
+    local_web = f"Local Web {tag}"
+    blocked_api = f"Blocked API {tag}"
+    blocked_web = f"Blocked Web {tag}"
+
+    # Flag OFF keeps local creation working on both surfaces.
+    created = client.post("/api/v1/opportunities", json={
+        "account_id": acc_id, "name": local_api, "amount": "10",
+    }, headers=h)
+    assert created.status_code == 200, created.text
+    assert client.post("/login", data={"email": email, "password": "secret123"}).status_code == 302
+    created_web = client.post("/deals", data={
+        "account_id": acc_id, "name": local_web, "amount": "10", "stage": "PROPOSAL",
+    })
+    assert created_web.status_code == 302, created_web.text
+
+    monkeypatch.setattr(settings, "aios_integration_enabled", True)
+    denied = client.post("/api/v1/opportunities", json={
+        "account_id": acc_id, "name": blocked_api, "amount": "10",
+    }, headers=h)
+    assert denied.status_code == 409, denied.text
+    assert "AIOS" in denied.json()["detail"]
+    denied_web = client.post("/deals", data={
+        "account_id": acc_id, "name": blocked_web, "amount": "10", "stage": "PROPOSAL",
+    })
+    assert denied_web.status_code == 409, denied_web.text
+    assert "AIOS" in denied_web.text
+
+    async with get_sessionmaker()() as s:
+        rows = (await s.execute(
+            select(Opportunity).where(Opportunity.name.in_([local_api, local_web, blocked_api, blocked_web]))
+        )).scalars().all()
+    names = {r.name for r in rows}
+    assert local_api in names and local_web in names
+    assert blocked_api not in names and blocked_web not in names
+
+
+async def test_aios_source_of_truth_stats_use_aios_count(client, monkeypatch):
+    import app.integrations.aios.client as aios_client
+    import app.web.routes as web_routes
+    from app.core.config import settings
+
+    tok, org, _ = _register(client, "crmstats")
+    h = {"Authorization": f"Bearer {tok}"}
+    acc = client.post("/api/v1/accounts", json={"name": "CRM Stats Co"}, headers=h)
+    assert acc.status_code == 200, acc.text
+    created = client.post("/api/v1/opportunities", json={
+        "account_id": acc.json()["id"], "name": "Local Stats Deal", "amount": "10",
+    }, headers=h)
+    assert created.status_code == 200, created.text
+
+    local = await web_routes._stats(org)
+    assert local["opps"] == 1
+
+    calls = []
+
+    async def _fake_list_deals(*, org_id, limit=100):
+        calls.append((org_id, limit))
+        return {
+            "org_id": org_id,
+            "deals": [{"id": "aios-1"}, {"id": "aios-2"}],
+            "count": 7,
+        }
+
+    monkeypatch.setattr(settings, "aios_integration_enabled", True)
+    monkeypatch.setattr(aios_client, "list_deals", _fake_list_deals)
+    shared = await web_routes._stats(org)
+    assert shared["opps"] == 7
+    assert calls == [(org, 500)]
+    assert shared["accounts"] == local["accounts"]
+
+    async def _fake_no_count(*, org_id, limit=100):
+        return {"org_id": org_id, "deals": [{"id": "1"}, {"id": "2"}, {"id": "3"}]}
+
+    monkeypatch.setattr(aios_client, "list_deals", _fake_no_count)
+    assert (await web_routes._stats(org))["opps"] == 3
+
+    async def _fake_broken(*, org_id, limit=100):
+        raise RuntimeError("peer down")
+
+    monkeypatch.setattr(aios_client, "list_deals", _fake_broken)
+    assert (await web_routes._stats(org))["opps"] == 0

@@ -111,12 +111,20 @@ async def integration_outbox_cron(ctx):
     await flush_outbox(batch=20)
 
 
+async def cleanup_expired_nonces(ctx):
+    """arq cron passes ctx; the routes GC takes no args."""
+    from app.integrations.aios.routes import cleanup_expired_nonces as gc
+
+    return await gc()
+
+
 class WorkerSettings:
     redis_settings = _redis_settings()
     functions = [audit_job, integration_outbox_flush_job, integration_reconcile]
     cron_jobs = [
         cron(integration_outbox_cron, second=30),
         cron(integration_reconcile, minute=set(range(0, 60, 5)), second=0),
+        cron(cleanup_expired_nonces, minute=set(range(0, 60, 30)), second=0),
     ]
 
 async def enqueue_audit(opp_id: str, org_id: str, prompt_version: str = "v1"):

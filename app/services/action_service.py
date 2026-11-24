@@ -20,7 +20,6 @@ async def transition_action(
     publish_aios: bool = False,
 ) -> dict:
     """Apply one action transition. Caller owns authorization; this owns guards and side effects."""
-    # shortcut: web passes publish_aios=False (web never emitted AIOS events), upgrade if web needs them.
     async with get_sessionmaker()() as s:
         a = await s.get(Action, aid)
         if not a or a.org_id != org_id:

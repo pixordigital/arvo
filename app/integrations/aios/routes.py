@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from . import auth as _auth
-from .auth import _forget_nonce, verify_request
+from .auth import _forget_nonce, verification_keys, verify_request
 from .events import AiosEvent
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/integrations/aios/v1", tags=["aios-integration"])
 _events: dict[str, tuple[float, dict]] = {}
 _events_lock = threading.Lock()
 _EVENTS_TTL = 86400
+# Claim covers only pre-side-effect window (503 <=60s); handlers commit their done marker with the side effect for _EVENTS_TTL.
 _PROCESSING_TTL = 60
 _MAX_EVENTS = 1000
 _MAX_NONCES = 1000
@@ -43,6 +44,26 @@ def _org_allowed(org, peer_org) -> bool:
     """Allowlist matches resolved org id/slug or the raw signed org value."""
     allowed = _allowed_aios_orgs()
     return not allowed or bool({str(peer_org), org.id, org.slug} & allowed)
+
+
+async def _set_org_context(session, org_id) -> None:
+    """Set transaction-local RLS org context (no-op on SQLite, fail closed on Postgres)."""
+    if not org_id:
+        return
+    bind = session.get_bind() if hasattr(session, "get_bind") else None
+    dialect = getattr(getattr(bind, "dialect", None), "name", None)
+    if dialect is not None and dialect != "postgresql":
+        return
+    from sqlalchemy import text
+
+    try:
+        await session.execute(
+            text("SELECT set_config('app.current_org_id', :org, true)"),
+            {"org": str(org_id)},
+        )
+    except Exception as error:
+        # Without RLS context Postgres runs downstream queries unconstrained.
+        raise HTTPException(503, "RLS org context unavailable") from error
 
 
 async def cleanup_expired_nonces() -> int:
@@ -144,6 +165,17 @@ async def _db_complete_event(key: str, response: dict) -> None:
             await db.commit()
 
 
+async def _db_mark_done_in_session(s, key: str, response: dict) -> None:
+    """Mark event done inside the caller's side-effect transaction; caller commits."""
+    from app.database.models import IntegrationEvent
+
+    with s.no_autoflush:  # marker read must not flush side effects before caller's commit
+        row = await s.get(IntegrationEvent, key)
+    if row:
+        row.response = response
+        row.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=_EVENTS_TTL)
+
+
 async def _db_release_event(key: str) -> None:
     from app.database.engine import get_sessionmaker
     from app.database.models import IntegrationEvent
@@ -208,11 +240,18 @@ async def _require_auth(request: Request) -> None:
         raise HTTPException(401, "Missing service signature")
     if len(nonce) > _MAX_NONCE_LEN:
         raise HTTPException(401, "Invalid nonce")
-    if kid != settings.aios_service_key_id:
+    keys = verification_keys(settings.aios_service_key_id, settings.aios_service_key, settings.aios_service_keys, kid)
+    if not keys:
         raise HTTPException(401, "Unknown service key id")
     body = await request.body()
     _prune_nonce_cache()
-    if not verify_request(kid, ts, nonce, request.method, request.url.path, body or None, sig, settings.aios_service_key):
+    for key in keys:
+        if verify_request(
+            kid, ts, nonce, request.method, request.url.path, body or None, sig, key,
+            query=request.url.query, idempotency_key=request.headers.get("Idempotency-Key") or "",
+        ):
+            break
+    else:
         raise HTTPException(401, "Invalid service signature")
     persisted = await _db_persist_nonce(nonce)
     if persisted is False:
@@ -249,6 +288,7 @@ async def create_agent_execution(body: AgentExecutionRequest):
     if not peer_org:
         raise HTTPException(400, "org_id required for agent execution")
     async with get_sessionmaker()() as session:
+        await _set_org_context(session, peer_org)
         opportunity = await session.get(Opportunity, body.opportunity_id)
         if not opportunity:
             raise HTTPException(404, "opportunity not found")
@@ -272,6 +312,7 @@ async def create_agent_execution(body: AgentExecutionRequest):
         "id": exec_id,
         "status": "queued",
         "business_trace_id": trace_id,
+        "org_id": str(peer_org),
     }
     payload = {
         "finding_id": body.finding_id,
@@ -285,6 +326,7 @@ async def create_agent_execution(body: AgentExecutionRequest):
     )
     try:
         async with get_sessionmaker()() as session:
+            await _set_org_context(session, peer_org)
             session.add(
                 IntegrationEvent(
                     idempotency_key=exec_id,
@@ -305,6 +347,7 @@ async def create_agent_execution(body: AgentExecutionRequest):
     job_id = await enqueue_audit(body.opportunity_id, opportunity.org_id)
     if job_id is None:
         async with get_sessionmaker()() as session:
+            await _set_org_context(session, peer_org)
             stored = await session.get(IntegrationEvent, exec_id)
             if stored:
                 await session.delete(stored)
@@ -313,6 +356,7 @@ async def create_agent_execution(body: AgentExecutionRequest):
 
     response["job_id"] = job_id
     async with get_sessionmaker()() as session:
+        await _set_org_context(session, peer_org)
         stored = await session.get(IntegrationEvent, exec_id)
         if stored:
             stored.response = response
@@ -335,11 +379,15 @@ async def get_execution(exec_id: str):
     job_id = cached.get("job_id")
     if not job_id:
         return cached
+    org_id = cached.get("org_id")
+    if not org_id:
+        raise HTTPException(503, "RLS org context unavailable")
 
     from app.database.engine import get_sessionmaker
     from app.database.models import DealAuditJob
 
     async with get_sessionmaker()() as session:
+        await _set_org_context(session, org_id)
         job = await session.get(DealAuditJob, job_id)
         if job is None:
             return cached
@@ -352,11 +400,15 @@ async def get_execution(exec_id: str):
         return {**cached, "status": status, "result": job.result, "error": job.error}
 
 
-async def _handle_agent_action_completed(payload: dict, trace_id: str | None) -> dict:
+async def _handle_agent_action_completed(payload: dict, trace_id: str | None, event_key: str | None = None, response: dict | None = None) -> dict:
     """Phase 4 slice: agent.action.completed → associa evidence ao finding, recalcula mínimo."""
     finding_id = payload.get("finding_id") or payload.get("opportunity_id") or payload.get("id")
     if not finding_id:
         return {"handled": False, "reason": "no finding_id", "recalculated": False}
+    peer_org = payload.get("org_id")
+    if not peer_org:
+        raise HTTPException(503, "RLS org context unavailable")
+    event_failed = str(payload.get("status") or "").lower() == "failed"
     try:
         from sqlalchemy import select
 
@@ -369,7 +421,7 @@ async def _handle_agent_action_completed(payload: dict, trace_id: str | None) ->
             None,
         )
         amount = None
-        if amount_field is not None and isinstance(payload[amount_field], str):
+        if not event_failed and amount_field is not None and isinstance(payload[amount_field], str):
             try:
                 parsed = D(payload[amount_field])
                 if parsed.is_finite() and parsed > 0:
@@ -378,6 +430,7 @@ async def _handle_agent_action_completed(payload: dict, trace_id: str | None) ->
                 amount = None
 
         async with get_sessionmaker()() as s:
+            await _set_org_context(s, peer_org)
             finding = await s.get(Finding, str(finding_id))
             if not finding:
                 return {"handled": False, "reason": "finding not found", "recalculated": False}
@@ -389,6 +442,8 @@ async def _handle_agent_action_completed(payload: dict, trace_id: str | None) ->
                 "business_trace_id": trace_id,
                 "recalculated": amount is not None,
             }
+            if event_failed:
+                result["status"] = "failed"
             prov = dict(finding.provenance) if isinstance(finding.provenance, dict) else {}
             if trace_id:
                 prov["business_trace_id"] = trace_id
@@ -432,8 +487,12 @@ async def _handle_agent_action_completed(payload: dict, trace_id: str | None) ->
                 finding.provenance = prov
             ev = FindingEvidence(finding_id=finding.id, kind="EVIDENCE", content={"business_trace_id": trace_id, "payload": payload, "source": "agent.action.completed"})
             s.add(ev)
-            await s.commit()
+            await s.flush()
             result["evidence_id"] = ev.id
+            if event_key is not None and response is not None:
+                response.update(result)
+                await _db_mark_done_in_session(s, event_key, response)
+            await s.commit()
             return result
     except HTTPException:
         raise
@@ -442,7 +501,7 @@ async def _handle_agent_action_completed(payload: dict, trace_id: str | None) ->
         raise
 
 
-async def _handle_deal_event(payload: dict, trace_id: str | None, event_type: str) -> dict:
+async def _handle_deal_event(payload: dict, trace_id: str | None, event_type: str, event_key: str | None = None, response: dict | None = None) -> dict:
     """Deterministic deal risk rule (Python/Decimal, no LLM): deal value = exposure."""
     from sqlalchemy import select
 
@@ -468,6 +527,7 @@ async def _handle_deal_event(payload: dict, trace_id: str | None, event_type: st
     }
 
     async with get_sessionmaker()() as s:
+        await _set_org_context(s, peer_org)
         org = await s.get(Organization, str(peer_org))
         if org is None:
             org = (await s.execute(select(Organization).where(Organization.slug == str(peer_org)))).scalar_one_or_none()
@@ -525,8 +585,8 @@ async def _handle_deal_event(payload: dict, trace_id: str | None, event_type: st
             provenance=prov,
         )
         s.add(fe)
-        await s.commit()
-        return {
+        await s.flush()
+        result = {
             "handled": rule,
             "finding_id": finding.id,
             "financial_event_id": fe.id,
@@ -534,6 +594,11 @@ async def _handle_deal_event(payload: dict, trace_id: str | None, event_type: st
             "finding_deduplicated": False,
             "business_trace_id": trace_id,
         }
+        if response is not None and event_key is not None:
+            response.update(result)
+            await _db_mark_done_in_session(s, event_key, response)
+        await s.commit()
+        return result
 
 
 class SsoTicketIn(BaseModel):
@@ -545,10 +610,13 @@ class SsoTicketIn(BaseModel):
 @router.post("/sso-ticket")
 async def consume_sso_ticket(request: Request, body: SsoTicketIn | None = None):
     """Consume a short-lived AIOS-signed ticket; role/identity come from local membership."""
+    import secrets
+
     import jwt
     from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
 
-    from app.core.security import create_token
+    from app.core.security import create_token, hash_password
     from app.database.engine import get_sessionmaker
     from app.database.models import ALL_ROLES, Membership, Organization, User
 
@@ -558,33 +626,49 @@ async def consume_sso_ticket(request: Request, body: SsoTicketIn | None = None):
     ticket = (body.ticket if body else None) or request.headers.get("x-sso-ticket")
     if not ticket:
         raise HTTPException(400, "ticket required")
-    try:
-        claims = jwt.decode(
-            ticket, settings.aios_service_key, algorithms=["HS256"], options={"verify_aud": False}
-        )
-    except jwt.PyJWTError:
+    kid = (body.key_id if body else None) or request.headers.get("x-service-key-id") or ""
+    keys = verification_keys(settings.aios_service_key_id, settings.aios_service_key, settings.aios_service_keys, kid)
+    if kid and not keys:
+        raise HTTPException(401, "Unknown service key id")
+    if not kid:
+        keys = [settings.aios_service_key] if settings.aios_service_key else []
+    claims = None
+    for key in keys:
+        try:
+            claims = jwt.decode(
+                ticket, key, algorithms=["HS256"], options={"verify_aud": False}, leeway=30
+            )
+            break
+        except jwt.PyJWTError:
+            continue
+    if claims is None:
         raise HTTPException(401, "Invalid SSO ticket")
     if claims.get("iss") != "aios" or claims.get("aud") != "arvo":
         raise HTTPException(401, "Invalid SSO ticket issuer/audience")
     if "exp" not in claims:
         raise HTTPException(401, "SSO ticket missing expiration")
-    kid = (body.key_id if body else None) or request.headers.get("x-service-key-id") or claims.get("key_id") or claims.get("kid")
-    if not kid or kid != settings.aios_service_key_id:
+    kid = kid or claims.get("key_id") or claims.get("kid")
+    if not kid or not verification_keys(settings.aios_service_key_id, settings.aios_service_key, settings.aios_service_keys, kid):
         raise HTTPException(401, "Unknown service key id")
-    nonce = (body.nonce if body else None) or claims.get("jti") or request.headers.get("x-service-nonce")
+    nonce = claims.get("jti")
     if not nonce or len(str(nonce)) > _MAX_NONCE_LEN:
         raise HTTPException(401, "SSO ticket nonce required")
+    body_nonce = body.nonce if body else None
+    if body_nonce is not None and str(body_nonce) != str(nonce):
+        raise HTTPException(401, "SSO nonce mismatch")
     persisted = await _db_persist_nonce(str(nonce))
     if persisted is False:
         raise HTTPException(401, "Replay nonce (DB)")
     if persisted is None:
         raise HTTPException(503, "Replay protection unavailable")
     sub, peer_org, ticket_role = claims.get("sub"), claims.get("org_id"), claims.get("role")
-    if not sub or not peer_org:
+    email = claims.get("email")
+    if not sub or not peer_org or not email:
         raise HTTPException(400, "SSO ticket missing identity claims")
     if ticket_role is not None and ticket_role not in ALL_ROLES:
         raise HTTPException(400, "Invalid role")
     async with get_sessionmaker()() as s:
+        await _set_org_context(s, peer_org)
         org = await s.get(Organization, str(peer_org))
         if org is None:
             org = (await s.execute(select(Organization).where(Organization.slug == str(peer_org)))).scalar_one_or_none()
@@ -593,29 +677,73 @@ async def consume_sso_ticket(request: Request, body: SsoTicketIn | None = None):
         if not _org_allowed(org, peer_org):
             raise HTTPException(403, "AIOS org not allowed")
         # sub is identity. email may only discover the same subject, never rebind it.
-        user = await s.get(User, str(sub))
-        if user is None and claims.get("email"):
-            discovered = (await s.execute(select(User).where(User.email == str(claims["email"]).strip().lower()))).scalar_one_or_none()
-            if discovered is not None and discovered.id != str(sub):
+        normalized_email = str(email).strip().lower()
+        org_pk = org.id  # plain id survives rollback; ORM instance does not
+        try:
+            user = await s.get(User, str(sub))
+            by_email = (
+                await s.execute(select(User).where(User.email == normalized_email))
+            ).scalar_one_or_none()
+            if by_email is not None and by_email.id != str(sub):
                 raise HTTPException(401, "SSO identity mismatch")
-            user = discovered
-        if user is None or not user.is_active:
-            raise HTTPException(401, "Unknown or inactive SSO subject")
-        membership = (
-            await s.execute(
-                select(Membership).where(
-                    Membership.user_id == user.id,
-                    Membership.org_id == org.id,
-                    Membership.is_active.is_(True),
+            if user is None:
+                user = User(
+                    id=str(sub),
+                    email=normalized_email,
+                    hashed_password=hash_password(secrets.token_urlsafe(32)),
+                    is_active=True,
                 )
-            )
-        ).scalar_one_or_none()
-        if membership is None:
-            raise HTTPException(403, "No active ARVO membership for SSO subject")
-        role = membership.role
-        if ticket_role is not None and ticket_role != role:
-            raise HTTPException(403, "SSO role mismatch")
-        user_id, org_id = user.id, org.id
+                s.add(user)
+            if not user.is_active:
+                raise HTTPException(401, "Unknown or inactive SSO subject")
+            membership = (
+                await s.execute(
+                    select(Membership).where(
+                        Membership.user_id == user.id,
+                        Membership.org_id == org_pk,
+                    )
+                )
+            ).scalar_one_or_none()
+            if membership is not None and not membership.is_active:
+                raise HTTPException(403, "No active ARVO membership for SSO subject")
+            if membership is None:
+                role = ticket_role or "VIEWER"
+                s.add(Membership(org_id=org_pk, user_id=user.id, role=role, is_active=True))
+            else:
+                role = membership.role
+                if ticket_role is not None and ticket_role != role:
+                    raise HTTPException(403, "SSO role mismatch")
+            await s.commit()
+        except IntegrityError:
+            # Concurrent first login won the insert race; re-read instead of failing 500.
+            await s.rollback()
+            await _set_org_context(s, peer_org)  # rollback cleared transaction-local RLS
+            by_email = (
+                await s.execute(select(User).where(User.email == normalized_email))
+            ).scalar_one_or_none()
+            if by_email is not None and by_email.id != str(sub):
+                raise HTTPException(401, "SSO identity mismatch")
+            user = await s.get(User, str(sub))
+            if user is None:
+                raise HTTPException(503, "SSO provisioning conflict; retry")
+            if not user.is_active:
+                raise HTTPException(401, "Unknown or inactive SSO subject")
+            membership = (
+                await s.execute(
+                    select(Membership).where(
+                        Membership.user_id == user.id,
+                        Membership.org_id == org_pk,
+                    )
+                )
+            ).scalar_one_or_none()
+            if membership is None:
+                raise HTTPException(503, "SSO provisioning conflict; retry")
+            if not membership.is_active:
+                raise HTTPException(403, "No active ARVO membership for SSO subject")
+            role = membership.role
+            if ticket_role is not None and ticket_role != role:
+                raise HTTPException(403, "SSO role mismatch")
+        user_id, org_id = user.id, org_pk
     token = create_token(user_id, org_id, role)
     return {"access_token": token, "token_type": "bearer", "org_id": org_id, "user_id": user_id, "role": role}
 
@@ -659,23 +787,25 @@ async def ingest_event(
         _store_idempotent(idempotency_key, existing)
         return {**existing, "deduplicated": True}
     side_effect_started = False
+    resp_base = {
+        "status": "processed",
+        "idempotency_key": idempotency_key,
+        "type": body.type,
+        "business_trace_id": trace_id,
+        "event_version": body.event_version or "1",
+    }
     try:
         extra_resp: dict = {}
         if body.type == "agent.action.completed":
-            extra_resp = await _handle_agent_action_completed(body.payload, trace_id)
+            extra_resp = await _handle_agent_action_completed(body.payload, trace_id, idempotency_key, resp_base)
             side_effect_started = bool(extra_resp.get("handled"))
         elif body.type in ("deal.created", "deal.stage_changed"):
-            extra_resp = await _handle_deal_event(body.payload, trace_id, body.type)
+            extra_resp = await _handle_deal_event(body.payload, trace_id, body.type, idempotency_key, resp_base)
             side_effect_started = True
-        resp = {
-            "status": "processed",
-            "idempotency_key": idempotency_key,
-            "type": body.type,
-            "business_trace_id": trace_id,
-            "event_version": body.event_version or "1",
-            "deduplicated": False,
-            **extra_resp,
-        }
+        if extra_resp.get("handled") is False:
+            # Unhandled event must stay retryable; never cache it as processed.
+            raise HTTPException(422, str(extra_resp.get("reason") or "event not handled"))
+        resp = {**resp_base, "deduplicated": False, **extra_resp}
         stripped = {k: v for k, v in resp.items() if k != "deduplicated"}
         await _db_complete_event(idempotency_key, stripped)
         _store_idempotent(idempotency_key, stripped)
@@ -683,4 +813,7 @@ async def ingest_event(
     except Exception:
         if not side_effect_started:
             await _db_release_event(idempotency_key)
+        elif side_effect_started:
+            # Marker committed with the side effect is DB authority; cache it here too.
+            _store_idempotent(idempotency_key, resp_base)
         raise

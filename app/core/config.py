@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     aios_base_url: str = ""
     aios_service_key_id: str = ""
     aios_service_key: str = ""
+    # Rotação HMAC: CSV `kid:secret,kid2:secret2` aceito no inbound; vazio = só a primária.
+    # Assinatura outbound continua usando aios_service_key_id/aios_service_key.
+    aios_service_keys: str = ""
     aios_allowed_orgs: str = ""  # CSV de org ids/slugs AIOS permitidos (writes/SSO); vazio = sem restrição
 
     @model_validator(mode="after")

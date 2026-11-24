@@ -29,6 +29,13 @@ services:
       ARVO_SKIP_MIGRATIONS: "1"
       ARVO_REDIS_URL: "redis://:${ARVO_REDIS_PASSWORD:-changeme}@redis:6379/0"
       ARVO_DATABASE_URL: "${ARVO_DATABASE_URL:?Set ARVO_DATABASE_URL to Supabase Postgres DSN}"
+      # AIOS integration: off by default; deploy both peers together; keys via env.
+      ARVO_AIOS_INTEGRATION_ENABLED: ${ARVO_AIOS_INTEGRATION_ENABLED:-false}
+      ARVO_AIOS_BASE_URL: ${ARVO_AIOS_BASE_URL:-}
+      ARVO_AIOS_SERVICE_KEY_ID: ${ARVO_AIOS_SERVICE_KEY_ID:-}
+      ARVO_AIOS_SERVICE_KEY: ${ARVO_AIOS_SERVICE_KEY:-}
+      ARVO_AIOS_ALLOWED_ORGS: ${ARVO_AIOS_ALLOWED_ORGS:-}
+      ARVO_AIOS_SERVICE_KEYS: ${ARVO_AIOS_SERVICE_KEYS:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -46,6 +53,13 @@ services:
       ARVO_SKIP_MIGRATIONS: "1"
       ARVO_REDIS_URL: "redis://:${ARVO_REDIS_PASSWORD:-changeme}@redis:6379/0"
       ARVO_DATABASE_URL: "${ARVO_DATABASE_URL:?Set ARVO_DATABASE_URL to Supabase Postgres DSN}"
+      # AIOS integration: off by default; deploy both peers together; keys via env.
+      ARVO_AIOS_INTEGRATION_ENABLED: ${ARVO_AIOS_INTEGRATION_ENABLED:-false}
+      ARVO_AIOS_BASE_URL: ${ARVO_AIOS_BASE_URL:-}
+      ARVO_AIOS_SERVICE_KEY_ID: ${ARVO_AIOS_SERVICE_KEY_ID:-}
+      ARVO_AIOS_SERVICE_KEY: ${ARVO_AIOS_SERVICE_KEY:-}
+      ARVO_AIOS_ALLOWED_ORGS: ${ARVO_AIOS_ALLOWED_ORGS:-}
+      ARVO_AIOS_SERVICE_KEYS: ${ARVO_AIOS_SERVICE_KEYS:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

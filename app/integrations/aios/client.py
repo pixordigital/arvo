@@ -6,6 +6,7 @@ HMAC + timeout + backoff.
 import asyncio
 import json
 import uuid
+from urllib.parse import urlencode
 
 import httpx
 
@@ -22,9 +23,16 @@ _CLIENT: httpx.AsyncClient | None = None
 _CLIENT_BASE: str | None = None
 
 
-def _headers(method: str, path: str, body: bytes | None = None) -> dict[str, str]:
+def _headers(
+    method: str,
+    path: str,
+    body: bytes | None = None,
+    query: str = "",
+    idempotency_key: str = "",
+) -> dict[str, str]:
     return sign_request(
-        method, path, body, settings.aios_service_key_id, settings.aios_service_key
+        method, path, body, settings.aios_service_key_id, settings.aios_service_key,
+        query, idempotency_key,
     )
 
 
@@ -54,7 +62,12 @@ async def _request_with_retry(
     last_exc: Exception | None = None
     for attempt in range(_RETRIES):
         try:
-            headers = _headers(method, path, body)
+            params = kw.get("params")
+            query = urlencode(params, doseq=True) if params else ""
+            headers = _headers(
+                method, path, body, query=query,
+                idempotency_key=(extra_headers or {}).get("Idempotency-Key", ""),
+            )
             headers.update(extra_headers or {})
             request_kw = dict(kw)
             request_kw["headers"] = headers
