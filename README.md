@@ -57,10 +57,10 @@ Migrations Alembic rodam no entrypoint da imagem (ou no serviço `migrate` do co
 
 ## AIOS↔ARVO status
 
-- Código novo de integração (canonical HMAC atual + código de peer) existe só localmente, não commitado nem deployado; entrega assinada em produção NÃO verificada. Último deploy verificado: AIOS `#805`, imagem `3aa2db5...`, finalizado `2026-11-24T19:56:40Z` (fix de routing); ARVO `#798` (probe anterior). A integração operou em produção com a canonical antiga — assinado 200 em 2026-11-22; evidência histórica, não da canonical atual.
-- AIOS `/health/ready` 200 `migrations:ok` no deploy `#805`; head `e1f2a3b4c5d6` no banco usado pelo app no deploy `#805`. Estado anterior (503, `behind:b8c9d0e1f2a3->d0e1f2a3b4c5`) superado.
-- Defaults do código: `AIOS_ARVO_INTEGRATION_ENABLED=false`, `ARVO_AIOS_INTEGRATION_ENABLED=false`. Em produção as duas flags estão ligadas e as chaves configuradas: health sem credenciais responde 401; flag desligada daria 404 e sem chave 503.
-- Mudança da canonical HMAC (query ordenada + `Idempotency-Key` + hash do corpo) ainda não deployada; exige deploy conjunto dos dois peers. Rollout misturado retorna 401.
+- Código novo de integração (canonical HMAC atual + peer) commitado e deployado; entrega assinada em produção NÃO verificada (smoke human-only). Deploys pareados 2026-11-24: integração `#807`/`#806` (AIOS `64ac67a...`, ARVO `09249ba...`); par atual `#809`/`#808` (AIOS `dcf74b4...`, ARVO `09249ba...`). Ambos `finished`, `/health/ready` unsigned 200. Assinado 200 em 2026-11-22 usava canonical antiga — evidência histórica, não da canonical atual.
+- AIOS `/health/ready` 200 `migrations:ok` no deploy `#809`; head `e1f2a3b4c5d6` no banco usado pelo app. Estado anterior (503, `behind:b8c9d0e1f2a3->d0e1f2a3b4c5`) superado.
+- Defaults do código: `AIOS_ARVO_INTEGRATION_ENABLED=false`, `ARVO_AIOS_INTEGRATION_ENABLED=false`. Em produção as duas flags estão ligadas e as chaves configuradas; antes do deploy pareado health sem credenciais respondia 401. Flag desligada daria 404 e sem chave 503.
+- Mudança da canonical HMAC (query ordenada + `Idempotency-Key` + hash do corpo) deployada nos dois peers (`#807`/`#806`, par atual `#809`/`#808`); rollout misturado retorna 401.
 - Com `AIOS_ARVO_INTEGRATION_ENABLED` e `ARVO_AIOS_INTEGRATION_ENABLED` ligadas (default `false`), `/deals` compartilhados têm o CRM do AIOS como fonte da verdade; com as flags desligadas, ficam no CRUD local do ARVO. ARVO tem só CRUD local de `Opportunity` para fluxo nativo; sem sync bidirecional.
 
 ## Supabase Studio
